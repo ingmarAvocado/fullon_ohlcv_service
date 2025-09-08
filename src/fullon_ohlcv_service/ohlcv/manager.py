@@ -1,0 +1,1 @@
+# OHLCV Manager - Multi-symbol OHLCV collection coordination

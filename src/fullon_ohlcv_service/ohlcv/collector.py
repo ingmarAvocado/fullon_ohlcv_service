@@ -1,0 +1,1 @@
+# OHLCV Collector - Single symbol OHLCV candle collection

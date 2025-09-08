@@ -1,0 +1,1 @@
+# Trade Manager - Multi-symbol trade collection coordination

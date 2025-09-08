@@ -1,0 +1,1 @@
+# Trade Collector - Single symbol individual trade data collection
