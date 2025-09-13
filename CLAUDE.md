@@ -2,315 +2,288 @@
 
 ## 1. Core Mission & Principles
 
-- **Mission**: Async daemon service for collecting OHLCV candles and individual trades from cryptocurrency exchanges, storing them in fullon_ohlcv database.
+- **Mission**: Simple async daemon for OHLCV/trade collection using fullon ecosystem integration.
 - **Architecture (LRRS)**:
-    - **Little**: Two focused modules: OHLCV candle collection and trade data collection
-    - **Responsible**: Reliable data collection with proper error handling and recovery
-    - **Reusable**: Can be integrated into larger trading systems or run standalone
-    - **Separate**: Clean separation between candle and trade collection logic
+    - **Little**: ~300-500 lines of integration code, NOT a data collection framework
+    - **Responsible**: Coordinate collectors, leverage fullon_exchange/fullon_ohlcv for heavy lifting
+    - **Reusable**: Standard fullon ecosystem patterns, database-driven configuration
+    - **Separate**: Clean integration layer, zero reimplementation of existing fullon functionality
 
-## 2. Key Dependencies
+## 2. Critical fullon Ecosystem Dependencies
 
-This service integrates with the fullon ecosystem:
+**THESE LIBRARIES DO THE HEAVY LIFTING - USE THEM, DON'T REINVENT:**
 
-- **fullon_log**: Structured logging with component isolation
-- **fullon_exchange**: Unified exchange API with WebSocket support
-- **fullon_ohlcv**: Database storage for OHLCV and trade data
-- **fullon_cache**: Redis caching for real-time data and coordination
-- **fullon_orm**: Database models and connection management
+### **fullon_orm**: Database Operations & Configuration
+```python
+from fullon_orm.database_context import DatabaseContext
+from fullon_orm.models import User, Exchange, Symbol
 
-## 3. Architecture Overview
+# Get exchanges/symbols from database (NO hardcoded lists)
+async with DatabaseContext() as db:
+    exchanges = await db.exchanges.get_user_exchanges(user_id=1)
+    symbols = await db.symbols.get_by_exchange_id(cat_ex_id)
+```
+
+### **fullon_exchange**: WebSocket Data Collection & Exchange APIs
+```python
+from fullon_exchange.queue import ExchangeQueue
+
+# Handles ALL websocket connections, reconnection, error recovery
+await ExchangeQueue.initialize_factory()
+handler = await ExchangeQueue.get_handler("kraken", "ohlcv_account")
+candles = await handler.get_ohlcv("BTC/USD", "1m", limit=100)
+```
+
+### **fullon_ohlcv**: Database Storage for OHLCV/Trade Data
+```python
+from fullon_ohlcv.repositories.ohlcv import CandleRepository, TradeRepository
+from fullon_ohlcv.models import Candle, Trade
+
+# Database storage with proper models
+async with CandleRepository("kraken", "BTC/USD", test=False) as repo:
+    success = await repo.save_candles(candles)
+```
+
+### **fullon_cache**: Redis Operations & Process Health
+```python
+from fullon_cache import ProcessCache, OHLCVCache
+
+# Health monitoring and real-time cache updates
+async with ProcessCache() as cache:
+    await cache.update_process("ohlcv_service", "daemon", "running")
+```
+
+### **fullon_log**: Structured Component Logging
+```python
+from fullon_log import get_component_logger
+
+logger = get_component_logger("fullon.ohlcv.collector.kraken.BTCUSD")
+logger.info("OHLCV collected", symbol="BTC/USD", count=100)
+```
+
+## 3. Simplified Architecture (Integration Layer Only)
 
 ```
 fullon_ohlcv_service/
-├── ohlcv/              # OHLCV 1-minute candle collection
-│   ├── manager.py      # Multi-symbol OHLCV coordination
-│   └── collector.py    # Single symbol OHLCV collection
-├── trade/              # Individual trade data collection  
-│   ├── manager.py      # Multi-symbol trade coordination
-│   └── collector.py    # Single symbol trade collection
-├── daemon.py           # Main service launcher
-└── config.py           # Environment configuration
+├── ohlcv/
+│   ├── collector.py    # Simple fullon_exchange + fullon_ohlcv integration
+│   └── manager.py      # Coordinate multiple collectors
+├── trade/  
+│   ├── collector.py    # Simple fullon_exchange + fullon_ohlcv integration
+│   └── manager.py      # Coordinate multiple collectors  
+├── daemon.py           # Read from fullon_orm, start collectors
+└── config.py           # Basic environment settings
 ```
 
-## 4. Core Development Patterns
+**Total Expected Code: ~300-500 lines of integration glue**
 
-### A. Async/Await First
+## 4. Simple Integration Patterns (Using fullon Libraries)
 
-All operations use async/await patterns, no threading:
+### A. Database-Driven Configuration (fullon_orm)
+
+```python
+from fullon_orm.database_context import DatabaseContext
+
+async def get_collection_targets():
+    """Get what to collect from fullon database - like ticker service"""
+    async with DatabaseContext() as db:
+        # Get user's active exchanges
+        exchanges = await db.exchanges.get_user_exchanges(user_id=1)
+        
+        targets = {}
+        for exchange in exchanges:
+            if exchange['active']:
+                # Get active symbols for this exchange  
+                symbols = await db.symbols.get_by_exchange_id(exchange['cat_ex_id'])
+                targets[exchange['name']] = [s.symbol for s in symbols if s.active]
+        
+        return targets  # {"kraken": ["BTC/USD"], "binance": ["BTC/USDT"]}
+```
+
+### B. Basic OHLCV Collector (fullon_exchange + fullon_ohlcv)
 
 ```python
 from fullon_log import get_component_logger
 from fullon_exchange.queue import ExchangeQueue
-import asyncio
+from fullon_ohlcv.repositories.ohlcv import CandleRepository
 
 class OhlcvCollector:
     def __init__(self, symbol: str, exchange: str):
-        self.logger = get_component_logger(f"fullon.ohlcv.collector.{exchange}.{symbol}")
+        self.logger = get_component_logger(f"fullon.ohlcv.{exchange}.{symbol}")
         self.symbol = symbol
         self.exchange = exchange
         
-    async def start_collection(self):
-        """Start async OHLCV collection for this symbol"""
+    async def collect_data(self):
+        """Collect OHLCV using fullon_exchange, store with fullon_ohlcv"""
         await ExchangeQueue.initialize_factory()
         try:
+            # Use fullon_exchange for data collection
             handler = await ExchangeQueue.get_handler(self.exchange, "ohlcv_account")
             await handler.connect()
+            candles = await handler.get_ohlcv(self.symbol, "1m", limit=100)
             
-            # Collection logic here
-            await self._collect_historical()
-            await self._start_realtime()
-            
+            # Use fullon_ohlcv for database storage
+            async with CandleRepository(self.exchange, self.symbol, test=False) as repo:
+                success = await repo.save_candles(candles)
+                self.logger.info("OHLCV collection completed", 
+                               symbol=self.symbol, count=len(candles), success=success)
+                
         finally:
             await ExchangeQueue.shutdown_factory()
 ```
 
-### B. Database Integration
-
-Use fullon_ohlcv for storage:
+### C. Health Monitoring (fullon_cache)
 
 ```python
-from fullon_ohlcv import OHLCVDatabase
+from fullon_cache import ProcessCache
 
-async def store_candles(self, candles: list):
-    """Store OHLCV candles to database"""
-    async with OHLCVDatabase(exchange=self.exchange, symbol=self.symbol) as db:
-        await db.store_candles(candles)
-        self.logger.info("Stored candles", count=len(candles))
+class OhlcvServiceDaemon:
+    async def update_health_status(self, status: str):
+        """Update daemon health using fullon_cache"""
+        async with ProcessCache() as cache:
+            await cache.update_process("ohlcv_service", "daemon", status)
 ```
 
-### C. Cache Integration
-
-Use fullon_cache for coordination:
+### D. Basic Daemon Coordination
 
 ```python
-from fullon_cache import OHLCVCache, ProcessCache
+from fullon_orm.database_context import DatabaseContext
+from fullon_log import get_component_logger
 
-async def update_status(self, status: str):
-    """Update collection status in cache"""
-    async with ProcessCache() as cache:
-        key = f"{self.exchange}:{self.symbol}"
-        await cache.update_process(type="ohlcv", key=key, status=status)
+class OhlcvServiceDaemon:
+    def __init__(self):
+        self.logger = get_component_logger("fullon.ohlcv.daemon")
+        
+    async def start(self):
+        """Start daemon using fullon_orm for configuration"""
+        # Get what to collect from database
+        targets = await get_collection_targets()
+        
+        # Start collectors for each exchange/symbol
+        for exchange, symbols in targets.items():
+            for symbol in symbols:
+                collector = OhlcvCollector(symbol, exchange)
+                # Start collection...
 ```
 
-## 5. Service Architecture
+## 5. Simple Service Architecture
 
-### A. Daemon Launcher
-
-The main daemon can launch either service independently:
+### A. Basic Daemon (Like ticker service)
 
 ```python
-# Launch OHLCV service only
-python -m fullon_ohlcv_service.daemon --service ohlcv --exchanges kraken,binance
-
-# Launch trade service only  
-python -m fullon_ohlcv_service.daemon --service trade --symbols BTC/USD,ETH/USD
-
-# Launch both services
-python -m fullon_ohlcv_service.daemon --service both
-```
-
-### B. Configuration Management
-
-Environment-based configuration:
-
-```python
-# .env file
-OHLCV_EXCHANGES=kraken,binance,bitmex
-OHLCV_SYMBOLS=BTC/USD,ETH/USD,BTC/EUR
-TRADE_COLLECTION_ENABLED=true
-LOG_LEVEL=INFO
-REDIS_HOST=localhost
-POSTGRES_HOST=localhost
-```
-
-## 6. Development Workflow
-
-### A. Setup
-```bash
-cd /home/ingmar/code/fullon_ohlcv_service
-poetry install
-cp .env.example .env  # Configure your environment
-```
-
-### B. Development Commands
-```bash
-# Run tests
-poetry run pytest
-
-# Code formatting
-poetry run black .
-poetry run ruff check .
-
-# Type checking
-poetry run mypy src/
-
-# Run OHLCV service
-poetry run python -m fullon_ohlcv_service.daemon --service ohlcv
-
-# Run trade service
-poetry run python -m fullon_ohlcv_service.daemon --service trade
-```
-
-## 7. Testing Strategy
-
-### A. Integration with Real Services
-Tests use real Redis and PostgreSQL databases with proper cleanup:
-
-```python
-import pytest
+from fullon_orm.database_context import DatabaseContext
 from fullon_ohlcv_service.ohlcv.collector import OhlcvCollector
 
-@pytest.mark.asyncio
-async def test_ohlcv_collection(db_context, redis_cache):
-    """Test OHLCV collection with real database"""
-    collector = OhlcvCollector("BTC/USD", "kraken")
-    
-    # Test historical data collection
-    await collector.collect_historical(days=1)
-    
-    # Verify data was stored
-    async with db_context.ohlcv as db:
-        candles = await db.get_recent_candles("BTC/USD", limit=100)
-        assert len(candles) > 0
+class OhlcvDaemon:
+    async def start(self):
+        # Get targets from database (like ticker service)
+        targets = await get_collection_targets()
+        
+        # Start collectors for each exchange/symbol
+        for exchange, symbols in targets.items():
+            for symbol in symbols:
+                collector = OhlcvCollector(symbol, exchange)
+                await collector.start_collection()
+
+# Usage: python -m fullon_ohlcv_service.daemon
 ```
 
-### B. Mock External APIs
-Use exchange sandbox/testnet for testing:
+### B. Simple Configuration
 
 ```python
-@pytest.fixture
-async def exchange_handler():
-    """Provide sandbox exchange handler for testing"""
-    await ExchangeQueue.initialize_factory()
-    handler = await ExchangeQueue.get_handler("kraken", "test_account")
-    handler.config.use_sandbox = True
-    yield handler
-    await ExchangeQueue.shutdown_factory()
+# .env file - basic settings only
+LOG_LEVEL=INFO
+
+# Database/cache connection handled by fullon ecosystem
+# Exchange/symbol configuration read from fullon_orm database
 ```
 
-## 8. Monitoring and Observability
+## 6. Foundation Issues Needed (#1-10)
 
-### A. Structured Logging
-```python
-self.logger.info(
-    "OHLCV collection completed",
-    exchange=self.exchange,
-    symbol=self.symbol,
-    candles_collected=count,
-    duration_seconds=elapsed,
-    errors=error_count
-)
-```
+**The service needs these basic issues before advanced features:**
 
-### B. Health Checks
-```python
-async def health_check(self) -> dict:
-    """Return service health status"""
-    return {
-        "service": "ohlcv_collector",
-        "status": "healthy" if self._is_collecting else "stopped",
-        "last_collection": self._last_collection.isoformat(),
-        "symbols_active": len(self._active_symbols)
-    }
-```
+1. **Issue #1**: Basic OhlcvCollector (✅ DONE - see implementation)
+2. **Issue #2**: Basic TradeCollector
+3. **Issue #3**: Simple Manager coordination
+4. **Issue #4**: Basic daemon with database-driven configuration  
+5. **Issue #5**: Health monitoring via ProcessCache
+6. **Issue #6**: Configuration management
+7. **Issue #7**: Basic error handling
+8. **Issue #8**: Integration testing
+9. **Issue #9**: Examples creation
+10. **Issue #10**: Documentation cleanup
 
-## 9. Error Handling and Recovery
+**Current Issues #11-20 should be CLOSED until foundation is complete.**
 
-### A. Graceful Degradation
-```python
-async def _handle_collection_error(self, error: Exception):
-    """Handle collection errors with exponential backoff"""
-    self.logger.error("Collection error", error=str(error), symbol=self.symbol)
-    
-    # Exponential backoff
-    wait_time = min(300, 2 ** self._error_count)
-    await asyncio.sleep(wait_time)
-    
-    # Retry collection
-    await self._retry_collection()
-```
+## 7. What You DON'T Need To Build
 
-### B. Service Recovery
-```python
-async def _ensure_service_health(self):
-    """Monitor and restart failed collectors"""
-    for collector in self._collectors.values():
-        if not collector.is_healthy():
-            self.logger.warning("Restarting unhealthy collector", symbol=collector.symbol)
-            await collector.restart()
-```
+**fullon_exchange already provides:**
+- WebSocket connections and management
+- Auto-reconnection with exponential backoff  
+- Exchange API abstraction
+- Error handling for network/exchange issues
 
-## 10. Key Implementation Notes
+**fullon_ohlcv already provides:**
+- CandleRepository, TradeRepository
+- Database models (Candle, Trade)
+- Database connection management
 
-### A. Exchange Abstraction
-Use fullon_exchange unified interface - never call exchange APIs directly:
+**fullon_orm already provides:**
+- Exchange and symbol configuration
+- Database-driven symbol discovery
 
+**Your job: ~300-500 lines of simple integration code**
+
+## 8. Development Approach
+
+### A. Follow ticker service patterns:
+- Database-driven symbol discovery
+- Simple integration classes  
+- Examples-driven development
+- Basic health monitoring
+
+### B. Implementation order:
+1. Create Issues #1-10 (foundation)
+2. Implement basic collectors
+3. Add simple daemon coordination
+4. Create working examples
+5. THEN consider advanced features
+
+### C. Keep it simple:
+- ~50-100 lines per collector class
+- ~100 lines for daemon coordination
+- Focus on integration, not innovation
+
+## 9. Key Rules
+
+### A. Use fullon ecosystem - don't reinvent:
 ```python
 # ✅ CORRECT - Use fullon_exchange
-from fullon_exchange.queue import ExchangeQueue
-handler = await ExchangeQueue.get_handler("kraken", "ohlcv")
-candles = await handler.get_ohlcv("BTC/USD", since=timestamp)
+handler = await ExchangeQueue.get_handler("kraken", "ohlcv_account") 
 
-# ❌ INCORRECT - Never call exchange APIs directly  
-# import kraken_api; kraken_api.get_ohlcv(...)
+# ❌ INCORRECT - Don't build your own exchange connections
+# websocket.connect("wss://kraken.com/...")
 ```
 
-### B. Database Operations
-Use fullon_ohlcv database abstraction:
-
+### B. Database-driven configuration:
 ```python
-# ✅ CORRECT - Use fullon_ohlcv
-from fullon_ohlcv import OHLCVDatabase
-async with OHLCVDatabase(exchange="kraken", symbol="BTC/USD") as db:
-    await db.store_candles(candles)
+# ✅ CORRECT - Read from fullon_orm database
+async with DatabaseContext() as db:
+    exchanges = await db.exchanges.get_user_exchanges(user_id=1)
 
-# ❌ INCORRECT - Never use direct SQL
-# "INSERT INTO ohlcv_data VALUES ..."
+# ❌ INCORRECT - Hardcoded lists  
+# exchanges = ["kraken", "binance"]
 ```
 
-### C. Configuration
-Always use environment variables via config.py:
+## 10. Bottom Line
 
-```python
-# ✅ CORRECT
-from fullon_ohlcv_service.config import Config
-config = Config()
-exchanges = config.OHLCV_EXCHANGES
+**This service should be simple integration code, not a framework.**
 
-# ❌ INCORRECT - No hardcoded values
-# exchanges = ["kraken", "binance"]  # DON'T DO THIS
-```
+- Follow fullon_ticker_service patterns
+- Use fullon ecosystem libraries for heavy lifting
+- Keep collectors under 100 lines each
+- Database-driven configuration only
+- Create foundation Issues #1-10 first
+- Close premature Issues #11-20
 
-## 11. Production Deployment
-
-### A. Service Management
-```bash
-# Systemd service
-sudo systemctl start fullon-ohlcv-service
-sudo systemctl enable fullon-ohlcv-service
-
-# Docker deployment
-docker run -d --name fullon-ohlcv fullon-ohlcv-service:latest
-```
-
-### B. Monitoring
-- Health check endpoints for service monitoring
-- Prometheus metrics export
-- Log aggregation with structured JSON logs
-- Database connection pooling optimization
-
-## 12. Development Checklist
-
-When implementing new features:
-
-- [ ] Use async/await patterns exclusively
-- [ ] Implement proper error handling with exponential backoff  
-- [ ] Add structured logging with relevant context
-- [ ] Write integration tests with real databases
-- [ ] Update configuration management
-- [ ] Document API changes in this file
-- [ ] Verify exchange abstraction usage
-- [ ] Test graceful shutdown behavior
-
-This service is designed to be a reliable, high-performance daemon for cryptocurrency data collection, following modern Python async patterns and integrating seamlessly with the fullon ecosystem.
+**Stop over-engineering. Start integrating.**

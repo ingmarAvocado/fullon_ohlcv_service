@@ -1,40 +1,33 @@
 # fullon_ohlcv_service
 
-Async daemon service for collecting OHLCV candles and individual trade data from cryptocurrency exchanges.
+Simple async daemon for OHLCV/trade collection using fullon ecosystem integration.
 
-## Architecture
+## What It Is
 
-- **ohlcv/**: 1-minute OHLCV candle collection
-- **trade/**: Individual trade data collection  
-- **daemon.py**: Main service launcher
-- **config.py**: Environment configuration
+~300-500 lines of integration code that coordinates:
+- fullon_exchange: WebSocket data collection
+- fullon_ohlcv: Database storage via repositories  
+- fullon_orm: Database-driven exchange/symbol configuration
+- fullon_cache: Health monitoring
 
-## Dependencies
+## What It's NOT
 
-- fullon_log: Structured logging
-- fullon_exchange: Unified exchange API
-- fullon_ohlcv: Database storage
-- fullon_cache: Redis coordination
-- fullon_orm: Database models
+- A data collection framework
+- Exchange API wrapper (use fullon_exchange)
+- Complex error recovery system (fullon_exchange handles this)
+- Configuration management system (reads from fullon_orm database)
 
-## Setup
+## Current Status
 
-```bash
-poetry install
-cp .env.example .env  # Configure your environment
-```
+**Foundation issues missing (#1-10)**. Advanced issues (#11-20) should be closed until basics work.
 
 ## Usage
 
 ```bash
-# Run OHLCV service
-poetry run python -m fullon_ohlcv_service.daemon --service ohlcv
-
-# Run trade service  
-poetry run python -m fullon_ohlcv_service.daemon --service trade
-
-# Run both services
-poetry run python -m fullon_ohlcv_service.daemon --service both
+poetry install
+poetry run python -m fullon_ohlcv_service.daemon
 ```
 
-See `CLAUDE.md` for detailed LLM development guide.
+Reads exchanges/symbols from fullon_orm database automatically.
+
+See `fix_this_fuck.md` for planning corrections and `CLAUDE.md` for simplified development guide.
