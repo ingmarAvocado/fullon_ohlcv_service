@@ -12,6 +12,6 @@ __version__ = "0.1.0"
 __author__ = "ingmar"
 __email__ = "ingmar@avocadoblock.com"
 
-from fullon_ohlcv_service.config import Config
+from fullon_ohlcv_service.env_config import Config
 
 __all__ = ["Config"]
