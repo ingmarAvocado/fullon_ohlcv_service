@@ -2,9 +2,23 @@
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch, create_autospec
+from unittest.mock import AsyncMock, patch, create_autospec, MagicMock
 from fullon_ohlcv_service.ohlcv.manager import OhlcvManager
 from fullon_ohlcv_service.ohlcv.collector import OhlcvCollector
+
+
+def mock_process_cache():
+    """Helper to create ProcessCache mock."""
+    mock_cache = AsyncMock()
+    mock_cache.new_process = AsyncMock()
+    mock_cache.update_process = AsyncMock()
+    mock_cache.delete_process = AsyncMock()
+
+    mock_process_cache_class = MagicMock()
+    mock_process_cache_class.return_value.__aenter__.return_value = mock_cache
+    mock_process_cache_class.return_value.__aexit__.return_value = None
+
+    return mock_process_cache_class, mock_cache
 
 
 class TestOhlcvManager:
@@ -20,12 +34,17 @@ class TestOhlcvManager:
         assert self.manager.collectors == {}
         assert self.manager.tasks == {}
         assert self.manager.running is False
+        assert self.manager._health_task is None
 
     @pytest.mark.asyncio
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
     @patch('fullon_ohlcv_service.ohlcv.manager.OhlcvCollector')
-    async def test_start_with_multiple_exchanges(self, mock_collector_class, mock_get_targets):
+    async def test_start_with_multiple_exchanges(self, mock_collector_class, mock_get_targets, mock_process_cache_class):
         """Test starting collectors for multiple exchanges and symbols."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Mock database configuration
         mock_get_targets.return_value = {
             "kraken": ["BTC/USD", "ETH/USD"],
@@ -62,9 +81,8 @@ class TestOhlcvManager:
         for collector in mock_collectors.values():
             collector.start_streaming.assert_called_once()
 
-        # Clean up tasks
-        for task in self.manager.tasks.values():
-            task.cancel()
+        # Clean up
+        await self.manager.stop()
 
     @pytest.mark.asyncio
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
@@ -82,10 +100,14 @@ class TestOhlcvManager:
         assert len(self.manager.collectors) == 0
 
     @pytest.mark.asyncio
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
     @patch('fullon_ohlcv_service.ohlcv.manager.OhlcvCollector')
-    async def test_start_with_no_targets(self, mock_collector_class, mock_get_targets):
+    async def test_start_with_no_targets(self, mock_collector_class, mock_get_targets, mock_process_cache_class):
         """Test starting with no configured targets."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Mock empty configuration
         mock_get_targets.return_value = {}
 
@@ -97,11 +119,18 @@ class TestOhlcvManager:
         assert len(self.manager.collectors) == 0
         assert len(self.manager.tasks) == 0
 
+        # Clean up
+        await self.manager.stop()
+
     @pytest.mark.asyncio
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
     @patch('fullon_ohlcv_service.ohlcv.manager.OhlcvCollector')
-    async def test_stop_all_collectors(self, mock_collector_class, mock_get_targets):
+    async def test_stop_all_collectors(self, mock_collector_class, mock_get_targets, mock_process_cache_class):
         """Test stopping all collectors and tasks."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Setup and start first
         mock_get_targets.return_value = {
             "kraken": ["BTC/USD", "ETH/USD"]
@@ -136,8 +165,12 @@ class TestOhlcvManager:
             assert task.cancelled() or task.done()
 
     @pytest.mark.asyncio
-    async def test_stop_when_not_running(self):
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
+    async def test_stop_when_not_running(self, mock_process_cache_class):
         """Test stopping when manager is not running."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Manager is not running initially
         assert self.manager.running is False
 
@@ -150,10 +183,14 @@ class TestOhlcvManager:
         assert len(self.manager.tasks) == 0
 
     @pytest.mark.asyncio
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
     @patch('fullon_ohlcv_service.ohlcv.manager.OhlcvCollector')
-    async def test_status_reporting(self, mock_collector_class, mock_get_targets):
+    async def test_status_reporting(self, mock_collector_class, mock_get_targets, mock_process_cache_class):
         """Test status reporting with active and completed tasks."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Setup configuration
         mock_get_targets.return_value = {
             "kraken": ["BTC/USD"],
@@ -209,10 +246,14 @@ class TestOhlcvManager:
         assert status["active_tasks"] == 0
 
     @pytest.mark.asyncio
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
     @patch('fullon_ohlcv_service.ohlcv.manager.OhlcvCollector')
-    async def test_task_exception_handling(self, mock_collector_class, mock_get_targets):
+    async def test_task_exception_handling(self, mock_collector_class, mock_get_targets, mock_process_cache_class):
         """Test that exceptions in collector tasks are handled."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Setup configuration
         mock_get_targets.return_value = {
             "kraken": ["BTC/USD"]
@@ -248,10 +289,14 @@ class TestOhlcvManager:
         await self.manager.stop()
 
     @pytest.mark.asyncio
+    @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
     @patch('fullon_ohlcv_service.ohlcv.manager.get_collection_targets')
     @patch('fullon_ohlcv_service.ohlcv.manager.OhlcvCollector')
-    async def test_concurrent_task_execution(self, mock_collector_class, mock_get_targets):
+    async def test_concurrent_task_execution(self, mock_collector_class, mock_get_targets, mock_process_cache_class):
         """Test that multiple collectors run concurrently, not sequentially."""
+        # Mock ProcessCache
+        mock_process_cache_class, mock_cache = mock_process_cache()
+
         # Setup configuration
         mock_get_targets.return_value = {
             "kraken": ["BTC/USD", "ETH/USD", "XRP/USD"]
