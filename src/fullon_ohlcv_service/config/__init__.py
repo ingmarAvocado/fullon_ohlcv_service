@@ -5,5 +5,6 @@ using fullon_orm, following the ticker service pattern.
 """
 
 from .database_config import get_collection_targets, should_collect_ohlcv
+from .settings import OhlcvServiceConfig, config
 
-__all__ = ['get_collection_targets', 'should_collect_ohlcv']
+__all__ = ['get_collection_targets', 'should_collect_ohlcv', 'OhlcvServiceConfig', 'config']

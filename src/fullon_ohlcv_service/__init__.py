@@ -1,17 +1,9 @@
-"""
-fullon_ohlcv_service - Async daemon service for OHLCV and trade data collection
-
-This package provides async services for collecting:
-- OHLCV 1-minute candles from cryptocurrency exchanges
-- Individual trade data from cryptocurrency exchanges
-
-Data is stored using fullon_ohlcv database and coordinated via fullon_cache.
-"""
+"""Simple OHLCV service for fullon ecosystem"""
 
 __version__ = "0.1.0"
-__author__ = "ingmar"
-__email__ = "ingmar@avocadoblock.com"
 
-from fullon_ohlcv_service.env_config import Config
+from .config.settings import config
+from .ohlcv.collector import OhlcvCollector
+from .ohlcv.manager import OhlcvManager
 
-__all__ = ["Config"]
+__all__ = ['config', 'OhlcvCollector', 'OhlcvManager']
