@@ -47,16 +47,18 @@ class TestOhlcvManager:
 
         # Mock database configuration
         mock_get_targets.return_value = {
-            "kraken": ["BTC/USD", "ETH/USD"],
-            "binance": ["BTC/USDT"]
+            "kraken": {"symbols": ["BTC/USD", "ETH/USD"], "ex_id": 1},
+            "binance": {"symbols": ["BTC/USDT"], "ex_id": 2}
         }
 
         # Mock collector instances
         mock_collectors = {}
-        def create_mock_collector(exchange, symbol):
+        def create_mock_collector(exchange, symbol, exchange_id=None, config=None):
             mock = create_autospec(OhlcvCollector, instance=True)
             mock.exchange = exchange
             mock.symbol = symbol
+            mock.exchange_id = exchange_id
+            mock.config = config
             mock.start_streaming = AsyncMock()
             key = f"{exchange}:{symbol}"
             mock_collectors[key] = mock
@@ -133,7 +135,7 @@ class TestOhlcvManager:
 
         # Setup and start first
         mock_get_targets.return_value = {
-            "kraken": ["BTC/USD", "ETH/USD"]
+            "kraken": {"symbols": ["BTC/USD", "ETH/USD"], "ex_id": 1}
         }
 
         # Mock collector with a long-running task
@@ -193,8 +195,8 @@ class TestOhlcvManager:
 
         # Setup configuration
         mock_get_targets.return_value = {
-            "kraken": ["BTC/USD"],
-            "binance": ["BTC/USDT"]
+            "kraken": {"symbols": ["BTC/USD"], "ex_id": 1},
+            "binance": {"symbols": ["BTC/USDT"], "ex_id": 2}
         }
 
         # Create mock collectors
@@ -256,7 +258,7 @@ class TestOhlcvManager:
 
         # Setup configuration
         mock_get_targets.return_value = {
-            "kraken": ["BTC/USD"]
+            "kraken": {"symbols": ["BTC/USD"], "ex_id": 1}
         }
 
         # Mock collector that raises exception
@@ -299,7 +301,7 @@ class TestOhlcvManager:
 
         # Setup configuration
         mock_get_targets.return_value = {
-            "kraken": ["BTC/USD", "ETH/USD", "XRP/USD"]
+            "kraken": {"symbols": ["BTC/USD", "ETH/USD", "XRP/USD"], "ex_id": 1}
         }
 
         # Track task start times

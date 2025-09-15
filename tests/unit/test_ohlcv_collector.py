@@ -18,8 +18,60 @@ class TestOhlcvCollector:
         """Test collector initialization."""
         assert self.collector.exchange == self.exchange
         assert self.collector.symbol == self.symbol
+        assert self.collector.exchange_id is None  # No exchange_id provided
         assert self.collector.running is False
         assert self.collector.logger is not None
+
+    def test_init_with_exchange_id(self):
+        """Test collector initialization with exchange ID."""
+        exchange_id = 123
+        collector = OhlcvCollector(self.exchange, self.symbol, exchange_id=exchange_id)
+        assert collector.exchange == self.exchange
+        assert collector.symbol == self.symbol
+        assert collector.exchange_id == exchange_id
+        assert collector.running is False
+
+    def test_credential_provider_without_exchange_id(self):
+        """Test credential provider returns empty credentials when no exchange_id."""
+        collector = OhlcvCollector(self.exchange, self.symbol)
+        credential_provider = collector._create_credential_provider()
+
+        # Should return empty credentials for public data
+        exchange_obj = type('MockExchange', (), {})()
+        key, secret = credential_provider(exchange_obj)
+        assert key == ""
+        assert secret == ""
+
+    @patch('fullon_credentials.fullon_credentials')
+    def test_credential_provider_with_exchange_id(self, mock_fullon_credentials):
+        """Test credential provider uses fullon_credentials when exchange_id is provided."""
+        exchange_id = 123
+        collector = OhlcvCollector(self.exchange, self.symbol, exchange_id=exchange_id)
+
+        # Mock fullon_credentials to return test credentials
+        mock_fullon_credentials.return_value = ("test_secret", "test_key")
+
+        credential_provider = collector._create_credential_provider()
+        exchange_obj = type('MockExchange', (), {})()
+        key, secret = credential_provider(exchange_obj)
+
+        # Should return credentials from fullon_credentials
+        assert key == "test_key"
+        assert secret == "test_secret"
+        mock_fullon_credentials.assert_called_once_with(ex_id=exchange_id)
+
+    def test_credential_provider_fallback_on_error(self):
+        """Test credential provider falls back to empty credentials on error."""
+        exchange_id = 123
+        collector = OhlcvCollector(self.exchange, self.symbol, exchange_id=exchange_id)
+
+        credential_provider = collector._create_credential_provider()
+        exchange_obj = type('MockExchange', (), {})()
+
+        # Since fullon_credentials is not available in test environment, should fallback
+        key, secret = credential_provider(exchange_obj)
+        assert key == ""
+        assert secret == ""
 
     @pytest.mark.asyncio
     @patch('fullon_ohlcv_service.ohlcv.collector.ProcessCache')
@@ -34,6 +86,7 @@ class TestOhlcvCollector:
             {'timestamp': 1634567950, 'open': 50500.0, 'high': 51500.0, 'low': 50000.0, 'close': 51000.0, 'volume': 110.2},
         ]
         mock_handler.get_ohlcv.return_value = mock_candles
+        mock_handler.connect = AsyncMock()
 
         mock_exchange_queue.get_rest_handler = AsyncMock(return_value=mock_handler)
         mock_exchange_queue.initialize_factory = AsyncMock()
@@ -54,8 +107,14 @@ class TestOhlcvCollector:
 
         # Verify calls
         mock_exchange_queue.initialize_factory.assert_called_once()
-        mock_exchange_queue.get_rest_handler.assert_called_once_with(self.exchange)
-        mock_handler.get_ohlcv.assert_called_once_with(self.symbol, "1m", limit=100)
+        # Check that get_rest_handler was called with exchange_obj and credential_provider
+        assert mock_exchange_queue.get_rest_handler.call_count == 1
+        call_args = mock_exchange_queue.get_rest_handler.call_args[0]
+        assert len(call_args) == 2  # exchange_obj, credential_provider
+        assert hasattr(call_args[0], 'ex_id')  # verify exchange object
+        assert callable(call_args[1])  # verify credential provider
+        mock_handler.connect.assert_called_once()
+        mock_handler.get_ohlcv.assert_called_once_with(self.symbol, "1m", limit=1000)
         mock_repo.save_candles.assert_called_once_with(mock_candles)
         mock_exchange_queue.shutdown_factory.assert_called_once()
 
@@ -73,6 +132,7 @@ class TestOhlcvCollector:
             {'timestamp': 1634567890, 'open': 50000.0, 'high': 51000.0, 'low': 49000.0, 'close': 50500.0, 'volume': 100.5},
         ]
         mock_handler.get_ohlcv.return_value = mock_candles
+        mock_handler.connect = AsyncMock()
 
         mock_exchange_queue.get_rest_handler = AsyncMock(return_value=mock_handler)
         mock_exchange_queue.initialize_factory = AsyncMock()
@@ -103,6 +163,7 @@ class TestOhlcvCollector:
         """Test WebSocket streaming functionality."""
         # Mock exchange handler
         mock_handler = AsyncMock()
+        mock_handler.connect = AsyncMock()
         mock_exchange_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
         mock_exchange_queue.initialize_factory = AsyncMock()
         mock_exchange_queue.shutdown_factory = AsyncMock()
@@ -141,7 +202,12 @@ class TestOhlcvCollector:
 
         # Verify calls
         mock_exchange_queue.initialize_factory.assert_called_once()
-        mock_exchange_queue.get_websocket_handler.assert_called_once_with(self.exchange)
+        # Check that get_websocket_handler was called with exchange_obj and credential_provider
+        assert mock_exchange_queue.get_websocket_handler.call_count == 1
+        call_args = mock_exchange_queue.get_websocket_handler.call_args[0]
+        assert len(call_args) == 2  # exchange_obj, credential_provider
+        assert hasattr(call_args[0], 'ex_id')  # verify exchange object
+        assert callable(call_args[1])  # verify credential provider
         mock_handler.connect.assert_called_once()
         mock_candle_class.assert_called_once()
         mock_repo.save_candles.assert_called_once()

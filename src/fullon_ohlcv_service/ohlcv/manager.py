@@ -6,6 +6,7 @@ from typing import Any
 from fullon_log import get_component_logger
 
 from fullon_ohlcv_service.config.database_config import get_collection_targets
+from fullon_ohlcv_service.config.settings import OhlcvServiceConfig
 from fullon_ohlcv_service.ohlcv.collector import OhlcvCollector
 
 # Use mock ProcessCache until fullon_cache is available
@@ -18,12 +19,14 @@ except ImportError:
 class OhlcvManager:
     """Simple manager - coordinates collectors from database config."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: OhlcvServiceConfig = None) -> None:
         self.logger = get_component_logger("fullon.ohlcv.manager")
         self.collectors: dict[str, OhlcvCollector] = {}
         self.tasks: dict[str, asyncio.Task] = {}
         self.running = False
         self._health_task: asyncio.Task | None = None
+        # Use provided config or load from environment
+        self.config = config or OhlcvServiceConfig.from_env()
 
     async def start(self) -> None:
         """Start collectors for database-configured symbols (like legacy run_loop)."""
@@ -33,14 +36,18 @@ class OhlcvManager:
         # Register process in cache
         await self._register_process()
 
-        # Get configuration from database (replaces legacy Database().get_symbols())
-        targets = await get_collection_targets()
+        # Get configuration from database using configured user_id
+        targets = await get_collection_targets(user_id=self.config.user_id)
 
         # Start collector for each exchange/symbol (replaces legacy threading)
-        for exchange, symbols in targets.items():
+        for exchange, exchange_info in targets.items():
+            symbols = exchange_info["symbols"]
+            ex_id = exchange_info.get("ex_id")
+
             for symbol in symbols:
                 key = f"{exchange}:{symbol}"
-                collector = OhlcvCollector(exchange, symbol)
+                # Pass config to each collector
+                collector = OhlcvCollector(exchange, symbol, exchange_id=ex_id, config=self.config)
                 self.collectors[key] = collector
 
                 # Start collection task (replaces legacy thread)
@@ -123,7 +130,8 @@ class OhlcvManager:
         while self.running:
             try:
                 await self._update_health()
-                await asyncio.sleep(30)  # Update every 30 seconds
+                # Use configured health update interval
+                await asyncio.sleep(self.config.health_update_interval)
             except Exception as e:
                 self.logger.error("Health update error", error=str(e))
                 break
