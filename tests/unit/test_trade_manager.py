@@ -2,9 +2,40 @@
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, create_autospec
+from unittest.mock import MagicMock, patch, create_autospec
 
 from fullon_ohlcv_service.trade.manager import TradeManager
+
+
+def create_clean_async_mock(return_value=None):
+    """Create an async mock that doesn't leave unawaited coroutines."""
+    call_count = 0
+    call_args_list = []
+
+    def mock_func(*args, **kwargs):
+        nonlocal call_count, call_args_list
+        call_count += 1
+        call_args_list.append((args, kwargs))
+
+        # Create a resolved future instead of a coroutine
+        future = asyncio.Future()
+        future.set_result(return_value)
+        return future
+
+    def assert_called_once():
+        assert call_count == 1, f"Expected 1 call, got {call_count}"
+
+    def assert_called_once_with(*args, **kwargs):
+        assert call_count == 1, f"Expected 1 call, got {call_count}"
+        assert call_args_list[0] == (args, kwargs), f"Expected {(args, kwargs)}, got {call_args_list[0]}"
+
+    # Add mock attributes
+    mock_func.call_count = property(lambda self: call_count)
+    mock_func.call_args_list = property(lambda self: call_args_list)
+    mock_func.assert_called_once = assert_called_once
+    mock_func.assert_called_once_with = assert_called_once_with
+
+    return mock_func
 
 
 @pytest.fixture
@@ -14,27 +45,13 @@ def manager():
 
 @pytest.mark.asyncio
 async def test_get_collection_targets(manager):
-    # Mock DatabaseContext to yield a fake db object
-    with patch("fullon_ohlcv_service.trade.manager.DatabaseContext") as mock_db_ctx:
-        fake_db = MagicMock()
-
-        # exchanges.get_user_exchanges returns list of dicts
-        fake_db.exchanges.get_user_exchanges = AsyncMock(
-            return_value=[{"name": "kraken", "active": True, "cat_ex_id": 1}]
-        )
-
-        # symbols.get_by_exchange_id returns list of objects with symbol and active
-        symbol_obj = MagicMock()
-        symbol_obj.symbol = "BTC/USD"
-        symbol_obj.active = True
-        fake_db.symbols.get_by_exchange_id = AsyncMock(return_value=[symbol_obj])
-
-        # Configure async context manager return
-        mock_db_ctx.return_value.__aenter__.return_value = fake_db
+    # Mock the module-level get_collection_targets function that manager calls
+    with patch("fullon_ohlcv_service.trade.manager.get_collection_targets") as mock_get_targets:
+        mock_get_targets.return_value = {"kraken": {"symbols": ["BTC/USD"], "ex_id": 1}}
 
         targets = await manager.get_collection_targets()
 
-        assert targets == {"kraken": ["BTC/USD"]}
+        assert targets == {"kraken": {"symbols": ["BTC/USD"], "ex_id": 1}}
 
 
 @pytest.mark.asyncio
@@ -43,7 +60,7 @@ async def test_start_collector(manager):
     with patch("fullon_ohlcv_service.trade.manager.TradeCollector") as mock_collector_cls:
         with patch("asyncio.create_task") as mock_create_task:
             mock_instance = MagicMock()
-            mock_instance.start_streaming = AsyncMock()
+            mock_instance.start_streaming = create_clean_async_mock()
             mock_instance.exchange = "kraken"
             mock_instance.symbol = "BTC/USD"
             mock_collector_cls.return_value = mock_instance
@@ -66,14 +83,14 @@ async def test_start_collector(manager):
 @pytest.mark.asyncio
 async def test_start_from_database(manager):
     """Test that start_from_database creates tasks for all targets."""
-    with patch.object(manager, "get_collection_targets", return_value={"kraken": ["BTC/USD", "ETH/USD"]}):
+    with patch.object(manager, "get_collection_targets", return_value={"kraken": {"symbols": ["BTC/USD", "ETH/USD"], "ex_id": 1}}):
         with patch("fullon_ohlcv_service.trade.manager.TradeCollector") as mock_collector_cls:
             with patch("asyncio.create_task") as mock_create_task:
                 instances = {}
 
                 def _build_instance(*args, **kwargs):
                     inst = MagicMock()
-                    inst.start_streaming = AsyncMock()
+                    inst.start_streaming = create_clean_async_mock()
                     inst.exchange = args[0]
                     inst.symbol = args[1]
                     instances[f"{inst.exchange}:{inst.symbol}"] = inst
@@ -99,8 +116,8 @@ async def test_stop_collector(manager):
     with patch("fullon_ohlcv_service.trade.manager.TradeCollector") as mock_collector_cls:
         with patch("asyncio.create_task") as mock_create_task:
             mock_instance = MagicMock()
-            mock_instance.start_streaming = AsyncMock()
-            mock_instance.stop_streaming = AsyncMock()  # Add stop_streaming method
+            mock_instance.start_streaming = create_clean_async_mock()
+            mock_instance.stop_streaming = create_clean_async_mock()
             mock_instance.exchange = "kraken"
             mock_instance.symbol = "BTC/USD"
             mock_collector_cls.return_value = mock_instance
@@ -142,7 +159,7 @@ async def test_get_status(manager):
     with patch("fullon_ohlcv_service.trade.manager.TradeCollector") as mock_collector_cls:
         with patch("asyncio.create_task") as mock_create_task:
             mock_instance = MagicMock()
-            mock_instance.start_streaming = AsyncMock()
+            mock_instance.start_streaming = create_clean_async_mock()
             mock_instance.exchange = "kraken"
             mock_instance.symbol = "BTC/USD"
             mock_instance.running = True  # Add running state
@@ -195,8 +212,8 @@ async def test_stop_all_collectors(manager):
 
             for i, (exchange, symbol) in enumerate([("kraken", "BTC/USD"), ("binance", "ETH/USDT")]):
                 mock_instance = MagicMock()
-                mock_instance.start_streaming = AsyncMock()
-                mock_instance.stop_streaming = AsyncMock()
+                mock_instance.start_streaming = create_clean_async_mock()
+                mock_instance.stop_streaming = create_clean_async_mock()
                 mock_instance.exchange = exchange
                 mock_instance.symbol = symbol
                 instances.append(mock_instance)

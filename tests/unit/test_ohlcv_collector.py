@@ -44,7 +44,7 @@ class TestOhlcvCollector:
 
     @patch('fullon_credentials.fullon_credentials')
     def test_credential_provider_with_exchange_id(self, mock_fullon_credentials):
-        """Test credential provider uses fullon_credentials when exchange_id is provided."""
+        """Test credential provider uses exchange_id for fullon_credentials lookup."""
         exchange_id = 123
         collector = OhlcvCollector(self.exchange, self.symbol, exchange_id=exchange_id)
 
@@ -55,15 +55,25 @@ class TestOhlcvCollector:
         exchange_obj = type('MockExchange', (), {})()
         key, secret = credential_provider(exchange_obj)
 
-        # Should return credentials from fullon_credentials
+        # Should return credentials from fullon_credentials using exchange_id
         assert key == "test_key"
         assert secret == "test_secret"
         mock_fullon_credentials.assert_called_once_with(ex_id=exchange_id)
 
-    def test_credential_provider_fallback_on_error(self):
+    @patch('os.getenv')
+    def test_credential_provider_fallback_on_error(self, mock_getenv):
         """Test credential provider falls back to empty credentials on error."""
-        exchange_id = 123
-        collector = OhlcvCollector(self.exchange, self.symbol, exchange_id=exchange_id)
+        # Mock environment variables - need to handle multiple calls
+        def mock_getenv_side_effect(key, default=None):
+            if key == 'ADMIN_MAIL':
+                return "admin@fullon"
+            elif key == 'OHLCV_USER_ID':
+                return "1"
+            else:
+                return default
+
+        mock_getenv.side_effect = mock_getenv_side_effect
+        collector = OhlcvCollector(self.exchange, self.symbol)
 
         credential_provider = collector._create_credential_provider()
         exchange_obj = type('MockExchange', (), {})()

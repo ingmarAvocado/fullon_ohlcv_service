@@ -137,8 +137,23 @@ async def websocket_candle_callback_example():
     await ExchangeQueue.initialize_factory()
     
     try:
+        # Create exchange object for new API
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange(exchange, "ohlcv_account")
+
+        # Create credential provider for public data
+        def credential_provider(exchange_obj):
+            return "", ""  # Empty for public data
+
         # Get exchange handler
-        handler = await ExchangeQueue.get_handler(exchange, "ohlcv_account")
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+        await handler.connect()
         
         # Define callback for OHLCV data
         async def on_ohlcv_data(ohlcv_data):
@@ -218,8 +233,23 @@ async def websocket_trade_to_bar_callback_example():
     await ExchangeQueue.initialize_factory()
     
     try:
+        # Create exchange object for new API
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange(exchange, "trade_account")
+
+        # Create credential provider for public data
+        def credential_provider(exchange_obj):
+            return "", ""  # Empty for public data
+
         # Get exchange handler
-        handler = await ExchangeQueue.get_handler(exchange, "trade_account")
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+        await handler.connect()
         
         # Define callback for trade data
         async def on_trade_data(trade_data):
@@ -292,7 +322,22 @@ async def websocket_with_reconnection_example():
     while reconnect_count < max_reconnects:
         try:
             # Get fresh handler for each connection attempt
-            handler = await ExchangeQueue.get_handler(exchange, "ohlcv_account")
+            # Create exchange object for new API
+            class SimpleExchange:
+                def __init__(self, exchange_name: str, account_id: str):
+                    self.ex_id = f"{exchange_name}_{account_id}"
+                    self.uid = account_id
+                    self.test = False
+                    self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+            exchange_obj = SimpleExchange(exchange, "ohlcv_account")
+
+            # Create credential provider for public data
+            def credential_provider(exchange_obj):
+                return "", ""  # Empty for public data
+
+            handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+            await handler.connect()
             
             # Define callback
             async def on_ohlcv_data(ohlcv_data):
@@ -404,7 +449,22 @@ async def _run_single_websocket(exchange: str, symbol: str):
     logger = get_component_logger(f"fullon.websocket.{exchange}.{symbol}")
     
     try:
-        handler = await ExchangeQueue.get_handler(exchange, "ohlcv_account")
+        # Create exchange object for new API
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange(exchange, "ohlcv_account")
+
+        # Create credential provider for public data
+        def credential_provider(exchange_obj):
+            return "", ""  # Empty for public data
+
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+        await handler.connect()
         
         async def callback(ohlcv_data):
             # Simple callback to save data

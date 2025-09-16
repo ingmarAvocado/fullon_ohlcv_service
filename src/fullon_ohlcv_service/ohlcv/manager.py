@@ -34,7 +34,7 @@ class OhlcvManager:
             return
 
         # Register process in cache
-        await self._register_process()
+        # await self._register_process()  # Temporarily disabled until ProcessCache API is clarified
 
         # Get configuration from database using configured user_id
         targets = await get_collection_targets(user_id=self.config.user_id)
@@ -43,11 +43,12 @@ class OhlcvManager:
         for exchange, exchange_info in targets.items():
             symbols = exchange_info["symbols"]
             ex_id = exchange_info.get("ex_id")
+            exchange_category_name = exchange_info.get("exchange_category_name", exchange)  # Use category name for fullon_exchange
 
             for symbol in symbols:
                 key = f"{exchange}:{symbol}"
-                # Pass config to each collector
-                collector = OhlcvCollector(exchange, symbol, exchange_id=ex_id, config=self.config)
+                # Pass config to each collector - use category exchange name for fullon_exchange compatibility
+                collector = OhlcvCollector(exchange_category_name, symbol, exchange_id=ex_id, config=self.config)
                 self.collectors[key] = collector
 
                 # Start collection task (replaces legacy thread)
@@ -85,7 +86,7 @@ class OhlcvManager:
         self.tasks.clear()
 
         # Clean up process registration
-        await self._cleanup_process()
+        # await self._cleanup_process()  # Temporarily disabled until ProcessCache API is clarified
 
         self.logger.info("Stopped all collectors")
 

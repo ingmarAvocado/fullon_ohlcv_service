@@ -76,7 +76,22 @@ from fullon_exchange.queue import ExchangeQueue
 
 # Initialize exchange
 await ExchangeQueue.initialize_factory()
-handler = await ExchangeQueue.get_handler("kraken", "ohlcv_account")
+
+# Create exchange object for new API
+class SimpleExchange:
+    def __init__(self, exchange_name: str, account_id: str):
+        self.ex_id = f"{exchange_name}_{account_id}"
+        self.uid = account_id
+        self.test = False
+        self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+exchange_obj = SimpleExchange("kraken", "ohlcv_account")
+
+# Create credential provider for public data
+def credential_provider(exchange_obj):
+    return "", ""  # Empty for public data
+
+handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
 
 # Define callback
 async def on_ohlcv_data(ohlcv_data):

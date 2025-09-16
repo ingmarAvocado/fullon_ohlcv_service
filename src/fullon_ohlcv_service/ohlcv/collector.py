@@ -129,16 +129,25 @@ class OhlcvCollector:
         falls back to empty credentials for public data.
         """
         def credential_provider(exchange_obj):
+            # Use exchange_id for credentials if available, otherwise try to get admin's exchange ID
             if self.exchange_id:
                 try:
                     from fullon_credentials import fullon_credentials
                     secret, key = fullon_credentials(ex_id=self.exchange_id)
+                    self.logger.info(f"Using credentials for exchange_id {self.exchange_id}")
                     return key, secret  # Note: fullon_credentials returns (secret, key) but exchange expects (key, secret)
+
                 except (ImportError, ValueError) as e:
-                    self.logger.warning(f"Could not get credentials for exchange {self.exchange_id}, using empty credentials for public data: {e}")
+                    self.logger.error(f"Could not get credentials for exchange_id {self.exchange_id}: {e}")
+                    self.logger.error(f"Cannot collect private data for {self.exchange}:{self.symbol} without credentials")
                     return "", ""
             else:
-                # No exchange ID provided, use empty credentials for public data
+                # No exchange_id provided - log this and use empty credentials for public data
+                import os
+                admin_mail = os.getenv('ADMIN_MAIL', 'admin@fullon')
+                self.logger.warning(f"No exchange_id provided for {self.exchange}:{self.symbol}")
+                self.logger.warning(f"Admin {admin_mail} should have proper exchange_id mapping for private data access")
+                self.logger.info(f"Using empty credentials for public data collection only")
                 return "", ""
 
         return credential_provider

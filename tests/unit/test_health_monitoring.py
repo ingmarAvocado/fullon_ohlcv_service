@@ -258,6 +258,7 @@ class TestOhlcvCollectorHealthMonitoring:
             {'timestamp': 1634567890, 'open': 50000.0, 'high': 51000.0,
              'low': 49000.0, 'close': 50500.0, 'volume': 100.5}
         ]
+        mock_handler.connect = AsyncMock()
         mock_exchange_queue.get_rest_handler = AsyncMock(return_value=mock_handler)
         mock_exchange_queue.initialize_factory = AsyncMock()
         mock_exchange_queue.shutdown_factory = AsyncMock()
@@ -295,6 +296,7 @@ class TestOhlcvCollectorHealthMonitoring:
 
         # Mock exchange handler
         mock_handler = AsyncMock()
+        mock_handler.connect = AsyncMock()
         mock_exchange_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
         mock_exchange_queue.initialize_factory = AsyncMock()
         mock_exchange_queue.shutdown_factory = AsyncMock()

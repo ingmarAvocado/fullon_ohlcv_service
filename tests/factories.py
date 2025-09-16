@@ -6,11 +6,14 @@ Adapted from fullon_ohlcv factories for service-level testing.
 """
 
 import random
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from typing import Optional, List, Dict, Any
+import uuid
+from datetime import datetime, timedelta, UTC
+from typing import Any
 import factory
 from factory import fuzzy
+
+# Import fullon_orm models for factories
+from fullon_orm.models import User, Exchange, Symbol
 
 
 # ============================================================================
@@ -20,9 +23,68 @@ from factory import fuzzy
 
 class BaseOHLCVFactory(factory.Factory):
     """Base factory for OHLCV service testing."""
-    
+
     class Meta:
         abstract = True
+
+
+# ============================================================================
+# FULLON_ORM MODEL FACTORIES (For Real Database Integration)
+# ============================================================================
+
+
+class UserFactory(BaseOHLCVFactory):
+    """Factory for creating real fullon_orm User objects."""
+
+    class Meta:
+        model = User
+
+    uid = factory.Sequence(lambda n: n + 1000)  # Start from 1000 to avoid conflicts
+    mail = factory.Faker('email')
+    password = "test_password_123"  # Required field
+    f2a = ""  # Required field - empty string is valid
+    name = factory.Faker('first_name')
+    lastname = factory.Faker('last_name')
+    role = "USER"
+    active = True
+    external_id = factory.LazyFunction(lambda: f"test-{uuid.uuid4().hex[:8]}")
+    # Optional but required fields
+    phone = ""
+    id_num = ""
+    note = "Test user created by factory"
+
+
+class CatExchangeFactory(BaseOHLCVFactory):
+    """Factory for creating catalog exchange entries (parent table for Exchange)."""
+    # Note: This creates the entries that Exchange.cat_ex_id references
+    # We'll create these manually since cat_exchanges might not have a model class
+    pass
+
+
+class ExchangeFactory(BaseOHLCVFactory):
+    """Factory for creating real fullon_orm Exchange objects."""
+
+    class Meta:
+        model = Exchange
+
+    uid = factory.SubFactory(UserFactory)  # Links to User
+    cat_ex_id = factory.Sequence(lambda n: n + 2000)  # Start from 2000, must exist in cat_exchanges
+    name = factory.Iterator(["test_exchange", "kraken", "binance", "coinbase"])
+    test = False  # Usually False for normal exchanges
+    active = True
+
+
+class SymbolFactory(BaseOHLCVFactory):
+    """Factory for creating real fullon_orm Symbol objects."""
+
+    class Meta:
+        model = Symbol
+
+    cat_ex_id = factory.Sequence(lambda n: n + 2000)  # Must match cat_exchanges entries
+    symbol = factory.Iterator(["BTC/USD", "ETH/USD", "BTC/USDT", "ETH/USDT", "LTC/USD"])
+    base = factory.LazyAttribute(lambda obj: obj.symbol.split('/')[0])  # Extract base from symbol
+    quote = factory.LazyAttribute(lambda obj: obj.symbol.split('/')[1])  # Extract quote from symbol
+    only_ticker = False  # Allow OHLCV collection
 
 
 # ============================================================================
@@ -32,12 +94,12 @@ class BaseOHLCVFactory(factory.Factory):
 
 class CandleDataFactory(BaseOHLCVFactory):
     """Factory for creating OHLCV candle data dictionaries."""
-    
+
     class Meta:
         model = dict
-    
+
     timestamp = factory.LazyFunction(
-        lambda: datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        lambda: datetime.now(UTC).replace(second=0, microsecond=0)
     )
     open = factory.LazyFunction(lambda: round(random.uniform(30000, 50000), 2))
     high = factory.LazyAttribute(lambda obj: obj.open + random.uniform(0, 1000))
@@ -52,11 +114,11 @@ class CandleDataFactory(BaseOHLCVFactory):
 
 class TradeDataFactory(BaseOHLCVFactory):
     """Factory for creating trade data dictionaries."""
-    
+
     class Meta:
         model = dict
-    
-    timestamp = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+    timestamp = factory.LazyFunction(lambda: datetime.now(UTC))
     price = factory.LazyFunction(lambda: round(random.uniform(30000, 50000), 2))
     volume = factory.LazyFunction(lambda: round(random.uniform(0.01, 10.0), 8))
     side = fuzzy.FuzzyChoice(['buy', 'sell'])
@@ -75,10 +137,10 @@ class TradeDataFactory(BaseOHLCVFactory):
 
 class OHLCVServiceConfigFactory(BaseOHLCVFactory):
     """Factory for OHLCV service configuration."""
-    
+
     class Meta:
         model = dict
-    
+
     exchanges = ["binance", "kraken"]
     symbols = ["BTC/USDT", "ETH/USDT"]
     collection_interval = 60
@@ -91,10 +153,10 @@ class OHLCVServiceConfigFactory(BaseOHLCVFactory):
 
 class TradeServiceConfigFactory(BaseOHLCVFactory):
     """Factory for trade service configuration."""
-    
+
     class Meta:
         model = dict
-    
+
     exchanges = ["binance", "kraken"]
     symbols = ["BTC/USDT", "ETH/USDT"]
     collection_enabled = True
@@ -106,10 +168,10 @@ class TradeServiceConfigFactory(BaseOHLCVFactory):
 
 class CollectorConfigFactory(BaseOHLCVFactory):
     """Factory for individual collector configuration."""
-    
+
     class Meta:
         model = dict
-    
+
     symbol = "BTC/USDT"
     exchange = "binance"
     collection_type = fuzzy.FuzzyChoice(["ohlcv", "trade"])
@@ -126,12 +188,12 @@ class CollectorConfigFactory(BaseOHLCVFactory):
 
 def create_candle_list(
     count: int = 24,
-    base_time: Optional[datetime] = None,
+    base_time: datetime | None = None,
     timeframe: str = "1h",
     symbol: str = "BTC/USDT",
     exchange: str = "binance",
     **kwargs
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Create a list of candles with proper time spacing.
     
     Args:
@@ -154,17 +216,17 @@ def create_candle_list(
         "4h": timedelta(hours=4),
         "1d": timedelta(days=1),
     }
-    
+
     interval = timeframe_map.get(timeframe, timedelta(hours=1))
-    
+
     if base_time is None:
-        base_time = datetime.now(timezone.utc) - (interval * count)
+        base_time = datetime.now(UTC) - (interval * count)
         # Align to timeframe boundary
         if timeframe == "1h":
             base_time = base_time.replace(minute=0, second=0, microsecond=0)
         elif timeframe == "1d":
             base_time = base_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    
+
     candles = []
     for i in range(count):
         timestamp = base_time + (interval * i)
@@ -175,18 +237,18 @@ def create_candle_list(
             **kwargs
         )
         candles.append(candle)
-    
+
     return candles
 
 
 def create_trade_list(
     count: int = 10,
-    base_time: Optional[datetime] = None,
+    base_time: datetime | None = None,
     time_interval: timedelta = timedelta(seconds=1),
     symbol: str = "BTC/USDT",
     exchange: str = "binance",
     **kwargs
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Create a list of trades with incrementing timestamps.
     
     Args:
@@ -201,8 +263,8 @@ def create_trade_list(
         List of trade data dictionaries
     """
     if base_time is None:
-        base_time = datetime.now(timezone.utc) - timedelta(seconds=count)
-    
+        base_time = datetime.now(UTC) - timedelta(seconds=count)
+
     trades = []
     for i in range(count):
         timestamp = base_time + (time_interval * i)
@@ -213,7 +275,7 @@ def create_trade_list(
             **kwargs
         )
         trades.append(trade)
-    
+
     return trades
 
 
@@ -222,7 +284,7 @@ def create_price_series(
     count: int = 100,
     volatility: float = 0.01,
     trend: float = 0.0
-) -> List[float]:
+) -> list[float]:
     """Create a realistic price series with random walk.
     
     Args:
@@ -235,12 +297,12 @@ def create_price_series(
         List of prices
     """
     prices = [start_price]
-    
+
     for _ in range(count - 1):
         change = random.gauss(trend * volatility, volatility)
         new_price = prices[-1] * (1 + change)
         prices.append(max(new_price, 0.01))  # Ensure positive
-    
+
     return prices
 
 
@@ -248,7 +310,7 @@ def create_volume_series(
     base_volume: float = 100.0,
     count: int = 100,
     volatility: float = 0.5
-) -> List[float]:
+) -> list[float]:
     """Create realistic volume series.
     
     Args:
@@ -269,10 +331,10 @@ def create_realistic_trades(
     count: int = 100,
     exchange: str = "binance",
     symbol: str = "BTC/USDT",
-    start_time: Optional[datetime] = None,
+    start_time: datetime | None = None,
     price_volatility: float = 0.001,
     volume_range: tuple = (0.01, 2.0)
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Create realistic trade data with correlated prices.
     
     Args:
@@ -287,27 +349,27 @@ def create_realistic_trades(
         List of realistic trade data dictionaries
     """
     if start_time is None:
-        start_time = datetime.now(timezone.utc) - timedelta(hours=1)
-    
+        start_time = datetime.now(UTC) - timedelta(hours=1)
+
     # Generate price series
     prices = create_price_series(
         start_price=45000.0,
         count=count,
         volatility=price_volatility
     )
-    
+
     trades = []
     for i in range(count):
         # Random time intervals (0.1 to 10 seconds)
         time_delta = timedelta(seconds=random.uniform(0.1, 10))
         timestamp = start_time + time_delta * i
-        
+
         # Determine side based on price movement
         if i > 0 and prices[i] > prices[i-1]:
             side = "buy" if random.random() > 0.3 else "sell"
         else:
             side = "sell" if random.random() > 0.3 else "buy"
-        
+
         trade = TradeDataFactory(
             timestamp=timestamp,
             price=prices[i],
@@ -318,19 +380,19 @@ def create_realistic_trades(
             exchange=exchange
         )
         trades.append(trade)
-    
+
     return trades
 
 
 def create_realistic_candles(
     count: int = 24,
     timeframe: str = "1h",
-    start_time: Optional[datetime] = None,
+    start_time: datetime | None = None,
     base_price: float = 45000.0,
     volatility: float = 0.02,
     symbol: str = "BTC/USDT",
     exchange: str = "binance"
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Create realistic OHLCV candles with proper relationships.
     
     Args:
@@ -347,7 +409,7 @@ def create_realistic_candles(
     """
     candles = []
     current_price = base_price
-    
+
     # Get time interval
     timeframe_map = {
         "1m": timedelta(minutes=1),
@@ -358,33 +420,33 @@ def create_realistic_candles(
         "1d": timedelta(days=1),
     }
     interval = timeframe_map.get(timeframe, timedelta(hours=1))
-    
+
     if start_time is None:
-        start_time = datetime.now(timezone.utc) - (interval * count)
+        start_time = datetime.now(UTC) - (interval * count)
         if timeframe in ["1h", "4h"]:
             start_time = start_time.replace(minute=0, second=0, microsecond=0)
         elif timeframe == "1d":
             start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    
+
     for i in range(count):
         timestamp = start_time + (interval * i)
-        
+
         # Generate OHLC with realistic relationships
         open_price = current_price
-        
+
         # Generate high and low
         max_move = current_price * volatility
         high = open_price + random.uniform(0, max_move)
         low = open_price - random.uniform(0, max_move)
-        
+
         # Close should be between high and low
         close = random.uniform(low, high)
-        
+
         # Volume with some correlation to price movement
         price_change = abs(close - open_price) / open_price
         base_volume = 1000.0
         volume = base_volume * (1 + price_change * 10) * random.uniform(0.5, 1.5)
-        
+
         candle = {
             "timestamp": timestamp,
             "open": round(open_price, 2),
@@ -396,10 +458,10 @@ def create_realistic_candles(
             "exchange": exchange
         }
         candles.append(candle)
-        
+
         # Next candle opens at previous close
         current_price = close
-    
+
     return candles
 
 
@@ -408,7 +470,7 @@ def create_realistic_candles(
 # ============================================================================
 
 
-def create_binance_candle_data(**kwargs) -> Dict[str, Any]:
+def create_binance_candle_data(**kwargs) -> dict[str, Any]:
     """Create Binance-specific candle data."""
     defaults = {
         "exchange": "binance",
@@ -418,7 +480,7 @@ def create_binance_candle_data(**kwargs) -> Dict[str, Any]:
     return CandleDataFactory(**defaults)
 
 
-def create_kraken_candle_data(**kwargs) -> Dict[str, Any]:
+def create_kraken_candle_data(**kwargs) -> dict[str, Any]:
     """Create Kraken-specific candle data."""
     defaults = {
         "exchange": "kraken",
@@ -428,7 +490,7 @@ def create_kraken_candle_data(**kwargs) -> Dict[str, Any]:
     return CandleDataFactory(**defaults)
 
 
-def create_binance_trade_data(**kwargs) -> Dict[str, Any]:
+def create_binance_trade_data(**kwargs) -> dict[str, Any]:
     """Create Binance-specific trade data."""
     defaults = {
         "exchange": "binance",
@@ -438,7 +500,7 @@ def create_binance_trade_data(**kwargs) -> Dict[str, Any]:
     return TradeDataFactory(**defaults)
 
 
-def create_kraken_trade_data(**kwargs) -> Dict[str, Any]:
+def create_kraken_trade_data(**kwargs) -> dict[str, Any]:
     """Create Kraken-specific trade data."""
     defaults = {
         "exchange": "kraken",
@@ -455,45 +517,45 @@ def create_kraken_trade_data(**kwargs) -> Dict[str, Any]:
 
 class ServiceStatusFactory(BaseOHLCVFactory):
     """Factory for service status data."""
-    
+
     class Meta:
         model = dict
-    
+
     service_type = fuzzy.FuzzyChoice(["ohlcv", "trade"])
     status = fuzzy.FuzzyChoice(["running", "stopped", "error", "starting"])
     collectors_active = factory.LazyFunction(lambda: random.randint(0, 10))
     symbols_monitored = factory.LazyFunction(lambda: random.randint(1, 50))
-    last_collection = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    last_collection = factory.LazyFunction(lambda: datetime.now(UTC))
     errors_count = factory.LazyFunction(lambda: random.randint(0, 5))
     uptime_seconds = factory.LazyFunction(lambda: random.randint(0, 86400))
 
 
 class CollectorStatusFactory(BaseOHLCVFactory):
     """Factory for individual collector status."""
-    
+
     class Meta:
         model = dict
-    
+
     symbol = "BTC/USDT"
     exchange = "binance"
     status = fuzzy.FuzzyChoice(["collecting", "stopped", "error", "reconnecting"])
-    last_update = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    last_update = factory.LazyFunction(lambda: datetime.now(UTC))
     error_count = factory.LazyFunction(lambda: random.randint(0, 3))
     data_points_collected = factory.LazyFunction(lambda: random.randint(0, 1000))
     connection_healthy = True
 
 
-# ============================================================================ 
+# ============================================================================
 # REPOSITORY MODEL FACTORIES
 # ============================================================================
 
 
 def create_candle_models(
     count: int = 10,
-    exchange: str = "binance", 
+    exchange: str = "binance",
     symbol: str = "BTC/USDT",
     **kwargs
-) -> List:
+) -> list:
     """Create Candle model objects for Repository testing.
     
     Args:
@@ -506,30 +568,30 @@ def create_candle_models(
         List of Candle model objects
     """
     from fullon_ohlcv.models import Candle
-    
+
     candle_dicts = create_candle_list(count=count, symbol=symbol, exchange=exchange, **kwargs)
     candles = []
-    
+
     for candle_data in candle_dicts:
         candle = Candle(
             timestamp=candle_data["timestamp"],
             open=candle_data["open"],
-            high=candle_data["high"], 
+            high=candle_data["high"],
             low=candle_data["low"],
             close=candle_data["close"],
             vol=candle_data["volume"]
         )
         candles.append(candle)
-    
+
     return candles
 
 
 def create_trade_models(
     count: int = 10,
     exchange: str = "binance",
-    symbol: str = "BTC/USDT", 
+    symbol: str = "BTC/USDT",
     **kwargs
-) -> List:
+) -> list:
     """Create Trade model objects for Repository testing.
     
     Args:
@@ -542,10 +604,10 @@ def create_trade_models(
         List of Trade model objects
     """
     from fullon_ohlcv.models import Trade
-    
+
     trade_dicts = create_trade_list(count=count, symbol=symbol, exchange=exchange, **kwargs)
     trades = []
-    
+
     for trade_data in trade_dicts:
         trade = Trade(
             timestamp=trade_data["timestamp"],
@@ -555,7 +617,7 @@ def create_trade_models(
             type=trade_data["type"].upper()   # Trade model expects uppercase
         )
         trades.append(trade)
-    
+
     return trades
 
 
@@ -565,15 +627,21 @@ def create_trade_models(
 
 
 __all__ = [
-    # Factories
+    # fullon_orm Model Factories (Real Database Integration)
+    "UserFactory",
+    "CatExchangeFactory",
+    "ExchangeFactory",
+    "SymbolFactory",
+
+    # OHLCV Data Factories
     "CandleDataFactory",
-    "TradeDataFactory", 
+    "TradeDataFactory",
     "OHLCVServiceConfigFactory",
     "TradeServiceConfigFactory",
     "CollectorConfigFactory",
     "ServiceStatusFactory",
     "CollectorStatusFactory",
-    
+
     # Helper functions
     "create_candle_list",
     "create_trade_list",
@@ -581,13 +649,13 @@ __all__ = [
     "create_volume_series",
     "create_realistic_trades",
     "create_realistic_candles",
-    
+
     # Exchange-specific
     "create_binance_candle_data",
     "create_kraken_candle_data",
-    "create_binance_trade_data", 
+    "create_binance_trade_data",
     "create_kraken_trade_data",
-    
+
     # Repository model factories
     "create_candle_models",
     "create_trade_models",

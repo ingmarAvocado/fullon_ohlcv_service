@@ -30,7 +30,23 @@ from fullon_exchange.queue import ExchangeQueue
 
 # Handles ALL websocket connections, reconnection, error recovery
 await ExchangeQueue.initialize_factory()
-handler = await ExchangeQueue.get_handler("kraken", "ohlcv_account")
+
+# Create exchange object
+class SimpleExchange:
+    def __init__(self, exchange_name: str, account_id: str):
+        self.ex_id = f"{exchange_name}_{account_id}"
+        self.uid = account_id
+        self.test = False
+        self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+exchange_obj = SimpleExchange("kraken", "ohlcv_account")
+
+# Create credential provider
+def credential_provider(exchange_obj):
+    return "", ""  # Empty for public data
+
+handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+await handler.connect()
 candles = await handler.get_ohlcv("BTC/USD", "1m", limit=100)
 ```
 
@@ -117,8 +133,22 @@ class OhlcvCollector:
         """Collect OHLCV using fullon_exchange, store with fullon_ohlcv"""
         await ExchangeQueue.initialize_factory()
         try:
+            # Create exchange object
+            class SimpleExchange:
+                def __init__(self, exchange_name: str, account_id: str):
+                    self.ex_id = f"{exchange_name}_{account_id}"
+                    self.uid = account_id
+                    self.test = False
+                    self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+            exchange_obj = SimpleExchange(self.exchange, "ohlcv_account")
+
+            # Create credential provider
+            def credential_provider(exchange_obj):
+                return "", ""  # Empty for public data
+
             # Use fullon_exchange for data collection
-            handler = await ExchangeQueue.get_handler(self.exchange, "ohlcv_account")
+            handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
             await handler.connect()
             candles = await handler.get_ohlcv(self.symbol, "1m", limit=100)
             
@@ -259,7 +289,20 @@ LOG_LEVEL=INFO
 ### A. Use fullon ecosystem - don't reinvent:
 ```python
 # ✅ CORRECT - Use fullon_exchange
-handler = await ExchangeQueue.get_handler("kraken", "ohlcv_account") 
+# Create exchange object
+class SimpleExchange:
+    def __init__(self, exchange_name: str, account_id: str):
+        self.ex_id = f"{exchange_name}_{account_id}"
+        self.uid = account_id
+        self.test = False
+        self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+exchange_obj = SimpleExchange("kraken", "ohlcv_account")
+
+def credential_provider(exchange_obj):
+    return "", ""  # Empty for public data
+
+handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider) 
 
 # ❌ INCORRECT - Don't build your own exchange connections
 # websocket.connect("wss://kraken.com/...")

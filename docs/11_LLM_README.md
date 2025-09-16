@@ -71,8 +71,20 @@ async def main():
     await ExchangeQueue.initialize_factory()
     
     try:
-        # Step 2: Get unified handler
-        handler = await ExchangeQueue.get_handler("kraken", "my_account")
+        # Step 2: Create exchange object and get unified handler
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("kraken", "my_account")
+
+        def credential_provider(exchange_obj):
+            return "your_api_key", "your_secret"
+
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
         
         # Step 3: Configure credentials (if needed)
         handler.config.credentials = ExchangeCredentials(
@@ -227,7 +239,20 @@ print(source)
 async def get_market_data():
     await ExchangeQueue.initialize_factory()
     try:
-        handler = await ExchangeQueue.get_handler("kraken", "data_account")
+        # Create exchange object
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("kraken", "data_account")
+
+        def credential_provider(exchange_obj):
+            return "", ""  # Empty for public data
+
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
         await handler.connect()
         
         # Get ticker data (no credentials needed)
@@ -243,8 +268,22 @@ async def get_market_data():
 async def compare_prices():
     await ExchangeQueue.initialize_factory()
     try:
-        kraken = await ExchangeQueue.get_handler("kraken", "account1") 
-        bitmex = await ExchangeQueue.get_handler("bitmex", "account1")
+        # Create exchange objects
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        kraken_obj = SimpleExchange("kraken", "account1")
+        bitmex_obj = SimpleExchange("bitmex", "account1")
+
+        def credential_provider(exchange_obj):
+            return "", ""  # Empty for public data
+
+        kraken = await ExchangeQueue.get_rest_handler(kraken_obj, credential_provider)
+        bitmex = await ExchangeQueue.get_rest_handler(bitmex_obj, credential_provider)
         
         await asyncio.gather(
             kraken.connect(),
@@ -269,7 +308,20 @@ async def compare_prices():
 async def stream_data():
     await ExchangeQueue.initialize_factory()
     try:
-        handler = await ExchangeQueue.get_handler("kraken", "stream_account")
+        # Create exchange object
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("kraken", "stream_account")
+
+        def credential_provider(exchange_obj):
+            return "", ""  # Empty for public data
+
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
         await handler.connect()
         
         # Define callback
@@ -298,7 +350,21 @@ from fullon_exchange.core.exceptions import (
 async def robust_trading():
     await ExchangeQueue.initialize_factory()
     try:
-        handler = await ExchangeQueue.get_handler("kraken", "trade_account")
+        # Create exchange object
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("kraken", "trade_account")
+
+        def credential_provider(exchange_obj):
+            return "api_key", "secret"  # Real credentials for trading
+
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        await handler.connect()
         
         # Configure with retries
         priority = Priority(level=PriorityLevel.HIGH, timeout=30.0)
@@ -382,7 +448,22 @@ config = ExchangeConfig(
     rate_limit_buffer=0.1
 )
 
-handler = await ExchangeQueue.get_handler_with_config("kraken", config)
+# Create exchange object with custom config
+class SimpleExchange:
+    def __init__(self, exchange_name: str, account_id: str):
+        self.ex_id = f"{exchange_name}_custom"
+        self.uid = "custom_account"
+        self.test = False
+        self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+exchange_obj = SimpleExchange("kraken", "custom")
+
+def credential_provider(exchange_obj):
+    return config.credentials.api_key, config.credentials.secret
+
+handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+# Apply custom config settings to handler if needed
+handler.config = config
 ```
 
 ## ⚠️ Important Notes for LLMs
@@ -392,7 +473,21 @@ handler = await ExchangeQueue.get_handler_with_config("kraken", config)
 # ✅ CORRECT - Always initialize factory
 await ExchangeQueue.initialize_factory()
 try:
-    handler = await ExchangeQueue.get_handler("kraken", "account")
+    # Create exchange object and credential provider
+    class SimpleExchange:
+        def __init__(self, exchange_name: str, account_id: str):
+            self.ex_id = f"{exchange_name}_{account_id}"
+            self.uid = account_id
+            self.test = False
+            self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+    exchange_obj = SimpleExchange("kraken", "account")
+
+    def credential_provider(exchange_obj):
+        return "api_key", "secret"  # Or empty strings for public data
+
+    # Use get_rest_handler for REST operations or get_websocket_handler for streaming
+    handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
     # ... use handler
 finally:
     await ExchangeQueue.shutdown_factory()
@@ -499,10 +594,11 @@ from fullon_exchange.core.types import OrderType, OrderSide
 ### Basic Workflow
 ```
 1. await ExchangeQueue.initialize_factory()
-2. handler = await ExchangeQueue.get_handler(exchange, account)
-3. handler.config.credentials = ExchangeCredentials(...)
-4. await handler.connect()
-5. Use handler with proper priorities
+2. Create exchange object: exchange_obj = SimpleExchange(exchange_name, account_id)
+3. Create credential provider: credential_provider = lambda obj: (api_key, secret)
+4. Get handler: handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+5. await handler.connect()
+6. Use handler with proper priorities
 6. await ExchangeQueue.shutdown_factory()
 ```
 
