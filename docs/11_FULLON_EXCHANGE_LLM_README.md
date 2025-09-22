@@ -36,6 +36,7 @@ poetry install --with dev
 - **Priority Queue System** - URGENT, HIGH, NORMAL, LOW, BULK priority levels
 - **Type-Safe ORM** - Strongly-typed models instead of dictionaries
 - **WebSocket Support** - Real-time market data and order updates
+- **OHLCV Data Collection** - Native candlestick data with capability detection
 - **Built-in Resilience** - Automatic rate limiting, retries, health monitoring
 - **No External Dependencies** - Self-contained, no database required
 
@@ -94,6 +95,10 @@ async def main():
         # Step 5: Use the handler
         balance = await handler.get_balance()
         print(f"Balance: {balance}")
+
+        # Get OHLCV data (new feature)
+        ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1h", limit=100)
+        print(f"Retrieved {len(ohlcv)} candles")
         
     finally:
         # Step 6: Cleanup (ALWAYS required)
@@ -195,11 +200,12 @@ print(source)
 | Example | Category | Difficulty | Description |
 |---------|----------|------------|-------------|
 | `basic_multiexchange_handler.py` | basic | beginner | Multi-exchange basic operations |
-| `rest_example.py` | basic | intermediate | Comprehensive REST API usage |
+| `rest_example.py` | basic | intermediate | Comprehensive REST API usage with OHLCV |
 | `websocket_example.py` | streaming | intermediate | WebSocket streaming patterns |
 | `simple_price_monitor.py` | streaming | beginner | Real-time price monitoring |
 | `rest_ordering_example.py` | advanced | advanced | Advanced order management |
 | `sandbox_example.py` | basic | beginner | Testing with sandbox/testnet |
+| `ohlcv_collection_example.py` | data | intermediate | OHLCV data collection patterns |
 
 ## 🏗️ Architecture Overview
 
@@ -228,6 +234,240 @@ print(source)
 5. **WebSocket Manager** - Real-time data streaming
 6. **Rate Limiter** - Automatic API compliance
 
+## 📊 OHLCV Data Collection (Candlestick Data)
+
+The library provides comprehensive OHLCV (Open, High, Low, Close, Volume) data collection with intelligent capability detection for optimal performance across exchanges.
+
+### Core OHLCV Method
+
+```python
+# Basic OHLCV retrieval
+ohlcv = await handler.get_ohlcv("BTC/USD")  # Default: 1-minute timeframe
+
+# With specific parameters
+ohlcv = await handler.get_ohlcv(
+    symbol="BTC/USD",
+    timeframe="1h",     # 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w
+    since=1609459200000,  # Timestamp in milliseconds
+    limit=100           # Maximum number of candles
+)
+
+# Data format: [timestamp, open, high, low, close, volume]
+for candle in ohlcv:
+    timestamp, open_price, high, low, close, volume = candle
+    print(f"Time: {timestamp}, Close: ${close:.2f}, Volume: {volume}")
+```
+
+### OHLCV Capability Detection
+
+The library automatically detects exchange capabilities to optimize data collection:
+
+```python
+# Check exchange capabilities
+supports_ohlcv = handler.supports_ohlcv()          # Native OHLCV support
+supports_1m = handler.supports_1m_ohlcv()          # 1-minute timeframe
+needs_trades = handler.needs_trades_for_ohlcv()    # Requires trade collection
+timeframes = handler.get_supported_timeframes()    # Available timeframes
+
+print(f"Native OHLCV: {'✅' if supports_ohlcv else '❌'}")
+print(f"1-minute support: {'✅' if supports_1m else '❌'}")
+print(f"Needs trades: {'✅' if needs_trades else '❌'}")
+print(f"Timeframes: {timeframes}")
+
+# Smart collection strategy
+if supports_1m and not needs_trades:
+    # Optimal: Use native OHLCV
+    ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1m")
+elif needs_trades:
+    # Use trade collection for better accuracy (e.g., Kraken)
+    trades = await handler.get_public_trades("BTC/USD", limit=1000)
+    # Library can construct OHLCV from trades
+else:
+    # Fallback to available timeframes
+    available = handler.get_supported_timeframes()
+    best_timeframe = "5m" if "5m" in available else available[0]
+    ohlcv = await handler.get_ohlcv("BTC/USD", timeframe=best_timeframe)
+```
+
+### Exchange-Specific OHLCV Behavior
+
+| Exchange | Native OHLCV | 1-minute | Needs Trades | Recommendation |
+|----------|--------------|----------|--------------|----------------|
+| **Kraken** | ✅ Yes | ✅ Yes | ✅ Yes | Use trade collection for accuracy |
+| **Binance** | ✅ Yes | ✅ Yes | ❌ No | Use native OHLCV |
+| **BitMEX** | ✅ Yes | ✅ Yes | ❌ No | Use native OHLCV |
+| **HyperLiquid** | ✅ Yes | ✅ Yes | ❌ No | Use native OHLCV |
+
+### Common OHLCV Patterns for LLMs
+
+#### Pattern 1: Multi-Timeframe Analysis
+```python
+async def analyze_multiple_timeframes():
+    await ExchangeQueue.initialize_factory()
+    try:
+        # Create exchange object and handler
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("kraken", "analysis")
+        def credential_provider(exchange_obj):
+            return "", ""  # Public data
+
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        await handler.connect()
+
+        # Get multiple timeframes
+        timeframes = ["1m", "1h", "1d"]
+        symbol = "BTC/USD"
+
+        ohlcv_data = {}
+        for tf in timeframes:
+            try:
+                ohlcv = await handler.get_ohlcv(symbol, timeframe=tf, limit=100)
+                ohlcv_data[tf] = ohlcv
+                print(f"{tf}: {len(ohlcv)} candles")
+            except Exception as e:
+                print(f"{tf}: Error - {e}")
+
+        # Analyze trends across timeframes
+        for tf, data in ohlcv_data.items():
+            if data:
+                latest = data[-1]
+                close_price = latest[4]
+                print(f"{tf} latest close: ${close_price:.2f}")
+
+    finally:
+        await ExchangeQueue.shutdown_factory()
+```
+
+#### Pattern 2: Price Monitoring with OHLCV
+```python
+async def monitor_price_action():
+    await ExchangeQueue.initialize_factory()
+    try:
+        # Setup handler
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("binance", "monitor")
+        def credential_provider(exchange_obj):
+            return "", ""
+
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        await handler.connect()
+
+        # Check capabilities first
+        if handler.supports_1m_ohlcv() and not handler.needs_trades_for_ohlcv():
+            # Get latest 1-minute candles
+            ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1m", limit=50)
+
+            # Analyze recent price action
+            recent_candles = ohlcv[-10:]  # Last 10 minutes
+            for candle in recent_candles:
+                timestamp, open_p, high, low, close, volume = candle
+                range_pct = ((high - low) / low) * 100
+                print(f"Range: {range_pct:.2f}%, Close: ${close:.2f}, Volume: {volume:.2f}")
+        else:
+            print("Using alternative data collection method")
+
+    finally:
+        await ExchangeQueue.shutdown_factory()
+```
+
+#### Pattern 3: Historical Data Collection
+```python
+async def collect_historical_data():
+    await ExchangeQueue.initialize_factory()
+    try:
+        # Setup for historical data collection
+        class SimpleExchange:
+            def __init__(self, exchange_name: str, account_id: str):
+                self.ex_id = f"{exchange_name}_{account_id}"
+                self.uid = account_id
+                self.test = False
+                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+
+        exchange_obj = SimpleExchange("kraken", "history")
+        def credential_provider(exchange_obj):
+            return "", ""
+
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        await handler.connect()
+
+        # Collect data with proper priority for bulk operations
+        from fullon_exchange.queue.priority import Priority, PriorityLevel
+
+        bulk_priority = Priority(level=PriorityLevel.BULK, timeout=300.0)
+
+        # Get historical daily data
+        from datetime import datetime, timedelta
+
+        # Start from 30 days ago
+        since = int((datetime.now() - timedelta(days=30)).timestamp() * 1000)
+
+        daily_ohlcv = await handler.get_ohlcv(
+            "BTC/USD",
+            timeframe="1d",
+            since=since,
+            limit=30,
+            priority=bulk_priority
+        )
+
+        print(f"Collected {len(daily_ohlcv)} daily candles")
+
+        # Process historical data
+        for candle in daily_ohlcv:
+            timestamp, open_p, high, low, close, volume = candle
+            date = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d')
+            print(f"{date}: O:{open_p:.2f} H:{high:.2f} L:{low:.2f} C:{close:.2f}")
+
+    finally:
+        await ExchangeQueue.shutdown_factory()
+```
+
+### Common Timeframes Reference
+
+| Timeframe | Description | Use Case | Typical Limit |
+|-----------|-------------|----------|---------------|
+| `1m` | 1 minute | Scalping, HFT | 1000-5000 |
+| `5m` | 5 minutes | Short-term analysis | 500-2000 |
+| `15m` | 15 minutes | Intraday trading | 200-1000 |
+| `1h` | 1 hour | Swing trading | 100-500 |
+| `4h` | 4 hours | Position analysis | 50-200 |
+| `1d` | 1 day | Daily analysis | 30-365 |
+| `1w` | 1 week | Weekly trends | 12-52 |
+
+### OHLCV Error Handling
+
+```python
+from fullon_exchange.core.exceptions import FullonExchangeError
+
+try:
+    ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1m", limit=100)
+
+    if not ohlcv:
+        print("No OHLCV data available for this symbol/timeframe")
+    else:
+        print(f"Successfully retrieved {len(ohlcv)} candles")
+
+except FullonExchangeError as e:
+    print(f"OHLCV collection failed: {e}")
+    # Fallback to alternative data source
+    try:
+        trades = await handler.get_public_trades("BTC/USD", limit=100)
+        print(f"Fallback: collected {len(trades)} trades")
+    except Exception as fallback_error:
+        print(f"Fallback also failed: {fallback_error}")
+```
+
 ## 🎯 Common LLM Usage Patterns
 
 ### Pattern 1: Simple Data Retrieval
@@ -255,6 +495,10 @@ async def get_market_data():
         # Get ticker data (no credentials needed)
         ticker = await handler.get_ticker("BTC/USD")
         print(f"BTC/USD Price: {ticker['last']}")
+
+        # Get OHLCV data (public endpoint)
+        ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1h", limit=24)
+        print(f"Retrieved {len(ohlcv)} hourly candles")
         
     finally:
         await ExchangeQueue.shutdown_factory()
@@ -590,6 +834,7 @@ from fullon_exchange.queue.priority import Priority, PriorityLevel
 from fullon_exchange.core.config import ExchangeCredentials
 from fullon_exchange.core.orm_utils import OrderRequest, CancelRequest
 from fullon_exchange.core.types import OrderType, OrderSide
+from fullon_exchange.core.exceptions import FullonExchangeError
 ```
 
 ### Basic Workflow
@@ -610,4 +855,33 @@ from fullon_exchange.core.types import OrderType, OrderSide
 - `LOW(8)` - Background operations
 - `BULK(10)` - Large batch operations
 
-This guide provides everything an LLM needs to understand and effectively use the Fullon Exchange library. The combination of type safety, unified interfaces, and comprehensive examples makes it ideal for AI-assisted trading application development.
+### Key OHLCV Methods
+```python
+# Basic OHLCV retrieval
+ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1h", limit=100)
+
+# Capability detection
+supports_ohlcv = handler.supports_ohlcv()
+supports_1m = handler.supports_1m_ohlcv()
+needs_trades = handler.needs_trades_for_ohlcv()
+timeframes = handler.get_supported_timeframes()
+
+# Common timeframes: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w
+# Data format: [timestamp, open, high, low, close, volume]
+```
+
+### OHLCV Decision Logic
+```python
+if handler.supports_1m_ohlcv() and not handler.needs_trades_for_ohlcv():
+    # Use native OHLCV (optimal)
+    ohlcv = await handler.get_ohlcv(symbol, timeframe="1m")
+elif handler.needs_trades_for_ohlcv():
+    # Use trade collection (Kraken-style)
+    trades = await handler.get_public_trades(symbol, limit=1000)
+else:
+    # Use available timeframes
+    timeframes = handler.get_supported_timeframes()
+    ohlcv = await handler.get_ohlcv(symbol, timeframe=timeframes[0])
+```
+
+This guide provides everything an LLM needs to understand and effectively use the Fullon Exchange library. The combination of type safety, unified interfaces, comprehensive OHLCV data collection, and comprehensive examples makes it ideal for AI-assisted trading application development.

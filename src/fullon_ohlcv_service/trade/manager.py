@@ -63,8 +63,79 @@ class TradeManager:
 
         self.logger.info("Trade collector started", exchange=exchange, symbol=symbol)
 
-    async def start_collector_with_historical(self, exchange: str, symbol: str, symbol_obj, exchange_id: int = None) -> None:
+    async def start_collector_with_historical(self, symbol_obj, exchange_id: int = None) -> None:
         """Start a trade collector with historical collection first, then streaming.
+
+        Simple interface that takes a symbol object and automatically determines
+        exchange information and collection parameters.
+
+        Args:
+            symbol_obj: Symbol model object with symbol, exchange info, and backtest parameter
+            exchange_id: Optional exchange ID for credentials (uses symbol's exchange if not provided)
+        """
+        # Extract info from symbol object
+        symbol_name = symbol_obj.symbol
+
+        # Get exchange category name from symbol's cat_ex_id
+        async with DatabaseContext() as db:
+            cat_exchange = await db.cat_exchanges.get_by_id(symbol_obj.cat_ex_id)
+            exchange_category_name = cat_exchange.name if cat_exchange else "unknown"
+
+            # Use provided exchange_id or try to find from symbol's exchange relationships
+            if not exchange_id:
+                # Try to get exchange_id from the symbol's exchange relationships
+                exchanges = await db.exchanges.get_by_cat_ex_id(symbol_obj.cat_ex_id)
+                if exchanges:
+                    exchange_id = exchanges[0].ex_id
+
+        key = f"{exchange_category_name}:{symbol_name}"
+        if key in self.collectors:
+            return
+
+        collector = TradeCollector(exchange_category_name, symbol_name, exchange_id=exchange_id)
+
+        # Run historical collection using automatic timestamp comparison
+        backtest_days = getattr(symbol_obj, 'backtest', 30)
+        self.logger.info("Starting historical collection before streaming",
+                       exchange=exchange_category_name,
+                       symbol=symbol_name,
+                       backtest_days=backtest_days)
+
+        try:
+            # Run full historical collection (not test mode)
+            historical_success = await collector.collect_historical_range(symbol_obj, test_mode=False)
+            if historical_success:
+                self.logger.info("Historical collection completed successfully",
+                               exchange=exchange_category_name,
+                               symbol=symbol_name)
+            else:
+                self.logger.warning("Historical collection had issues",
+                                  exchange=exchange_category_name,
+                                  symbol=symbol_name)
+        except Exception as e:
+            self.logger.error("Historical collection failed",
+                            exchange=exchange_category_name,
+                            symbol=symbol_name,
+                            error=str(e))
+
+        # Then start streaming collection
+        task = asyncio.create_task(collector.start_streaming())
+
+        # Store both collector and task
+        self.collectors[key] = {
+            "collector": collector,
+            "task": task
+        }
+
+        self.logger.info("Trade collector started with historical collection",
+                        exchange=exchange_category_name,
+                        symbol=symbol_name,
+                        backtest_days=backtest_days)
+
+    async def start_collector_with_historical_detailed(self, exchange: str, symbol: str, symbol_obj, exchange_id: int = None) -> None:
+        """Start a trade collector with historical collection first, then streaming.
+
+        Detailed interface for when you need to specify exchange name explicitly.
 
         Args:
             exchange: Exchange name (category name for fullon_exchange)

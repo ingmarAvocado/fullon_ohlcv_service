@@ -106,7 +106,7 @@ async with ProcessCache() as cache:
 - PR: Reference issue, summarize example coverage; merge once all checks pass
 
 ## Validation Checklist (Non‑Negotiable)
-- Examples: `python run_all_examples.py` passes
+- Examples: `python run_example_pipeline.py` passes
 - Tests: `poetry run pytest` green (async + DB/Redis isolation patterns)
 - Style: `ruff`, `black`, `mypy` clean (see `pyproject.toml`)
 - Scope: No reinvention; uses fullon libs; no direct SQL or hardcoded config
@@ -125,7 +125,7 @@ async with ProcessCache() as cache:
 - Lint/format: `ruff check . && black .`
 - Types: `mypy`
 - Tests: `poetry run pytest`
-- Examples: `python run_all_examples.py`
+- Examples: `python run_example_pipeline.py`
 
 ## What to Implement First (Foundation)
 Follow the corrected order from `fix_this_fuck.md` and `git_plan.md`:

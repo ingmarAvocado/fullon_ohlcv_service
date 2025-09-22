@@ -22,8 +22,8 @@ from fullon_ohlcv.repositories.ohlcv import TradeRepository
 - `await repo.get_trades_in_range(start, end, limit=10) -> List[Trade]` - Get trades by time range
 
 ### Timestamps
-- `await repo.get_oldest_timestamp() -> datetime` - Get oldest trade timestamp
-- `await repo.get_latest_timestamp() -> datetime` - Get latest trade timestamp
+- `await repo.get_oldest_timestamp() -> Optional[datetime]` - Get oldest trade timestamp
+- `await repo.get_latest_timestamp() -> Optional[datetime]` - Get latest trade timestamp
 
 ## CandleRepository Methods
 
@@ -41,13 +41,14 @@ from fullon_ohlcv.repositories.ohlcv import CandleRepository
 - `await repo.save_candles(candles: List[Candle]) -> bool` - Save candle list
 
 ### Timestamps
-- `await repo.get_oldest_timestamp() -> datetime` - Get oldest candle timestamp
-- `await repo.get_latest_timestamp() -> datetime` - Get latest candle timestamp
+- `await repo.get_oldest_timestamp() -> Optional[arrow.Arrow]` - Get oldest candle timestamp
+- `await repo.get_latest_timestamp() -> Optional[arrow.Arrow]` - Get latest candle timestamp
 
 ## TimeseriesRepository Methods
 
 ```python
 from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
+import arrow
 ```
 
 ### Initialization
@@ -57,11 +58,11 @@ from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 - `await repo.close()` - Manual cleanup
 
 ### OHLCV Data Generation
-- `await repo.fetch_ohlcv(start_time, end_time, timeframe="1m", limit=None) -> List[Candle]` - Generate OHLCV candles from existing trade data
+- `await repo.fetch_ohlcv(compression: int, period: str, fromdate: arrow.Arrow, todate: arrow.Arrow) -> List[tuple]` - Generate OHLCV candles from existing trade data
 
 ### Timestamps
-- `await repo.get_oldest_timestamp() -> datetime` - Get oldest data timestamp
-- `await repo.get_latest_timestamp() -> datetime` - Get latest data timestamp
+- `await repo.get_oldest_timestamp() -> Optional[arrow.Arrow]` - Get oldest data timestamp
+- `await repo.get_latest_timestamp() -> Optional[arrow.Arrow]` - Get latest data timestamp
 
 ## Utilities
 
@@ -131,6 +132,27 @@ asyncio.run(main())
 # Save multiple trades/candles at once
 trades = [Trade(...), Trade(...), Trade(...)]
 success = await repo.save_trades(trades)
+```
+
+### TimeseriesRepository OHLCV Generation
+```python
+import arrow
+from datetime import datetime, timezone, timedelta
+
+# Generate 1-minute OHLCV candles from trade data
+end_time = datetime.now(timezone.utc)
+start_time = end_time - timedelta(hours=24)
+
+async with TimeseriesRepository("binance", "BTC/USDT", test=True) as repo:
+    ohlcv_data = await repo.fetch_ohlcv(
+        compression=1,
+        period="minutes",
+        fromdate=arrow.get(start_time),
+        todate=arrow.get(end_time)
+    )
+    # Returns list of tuples: (timestamp, open, high, low, close, volume)
+    for ts, open_price, high_price, low_price, close_price, volume in ohlcv_data:
+        print(f"Candle: {ts} O:{open_price} H:{high_price} L:{low_price} C:{close_price} V:{volume}")
 ```
 
 That's all the methods shown in examples! See example files for complete usage.
