@@ -2,12 +2,13 @@ from __future__ import annotations
 
 """Trade Collector - Single symbol trade data collection.
 
-Simple integration that uses fullon_exchange for data retrieval/streaming and
-fullon_ohlcv repositories for persistence. Mirrors the structure used by the
-OHLCV collector to keep patterns consistent across the service.
+Two-phase collection following legacy pattern:
+Phase 1: Historical catch-up via REST calls (like legacy fetch_individual_trades)
+Phase 2: Real-time streaming via WebSocket (like legacy fetch_individual_trades_ws)
 """
 
 import arrow
+import asyncio
 from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
 from fullon_ohlcv.models import Trade
@@ -91,14 +92,14 @@ class TradeCollector:
             handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
             await handler.connect()
 
-            # Use get_trades method (standard fullon_exchange API)
-            trades_data = await handler.get_trades(self.symbol, limit=1000)
+            # Phase 1: Historical trade collection (REST)
+            trades_data = await self._collect_historical_trades(handler)
 
             trades = [
                 Trade(
                     timestamp=t["timestamp"],
                     price=t["price"],
-                    volume=t["volume"],
+                    volume=t.get("amount", t.get("volume", 0)),  # Handle different field names
                     side=t.get("side", "BUY"),
                     type=t.get("type", "MARKET"),
                 )
@@ -140,12 +141,12 @@ class TradeCollector:
             await ExchangeQueue.shutdown_factory()
 
     async def collect_historical_range(self, symbol_obj, test_mode: bool = False) -> bool:
-        """Collect historical trades from symbol.backtest days ago until caught up.
+        """Collect historical trades from the oldest available timestamp until caught up.
 
-        Implements the legacy loop pattern:
-        1. Get latest timestamp from database OR use symbol.backtest days ago
-        2. Loop fetching trades since last timestamp until caught up
-        3. Handle errors gracefully and log progress
+        Automatically determines the best starting point by comparing:
+        1. Oldest timestamp in database (get_oldest_timestamp)
+        2. Symbol.backtest days ago
+        Uses whichever is older to ensure complete historical coverage.
 
         Args:
             symbol_obj: Symbol model with backtest parameter (days of history)
@@ -158,35 +159,38 @@ class TradeCollector:
 
         # Get backtest days from symbol (default 30 if not specified)
         backtest_days = getattr(symbol_obj, 'backtest', 30) if symbol_obj else 30
-
-        # Calculate start timestamp (backtest days ago)
-        start_time = arrow.utcnow().shift(days=-backtest_days).timestamp()
-        start_time_str = arrow.get(start_time).format('YYYY-MM-DD HH:mm:ss UTC')
+        backtest_timestamp = arrow.utcnow().shift(days=-backtest_days).timestamp()
 
         logger.info("Starting historical trade collection",
                    symbol=self.symbol,
                    backtest_days=backtest_days,
-                   start_time=start_time_str,
                    test_mode=test_mode)
 
         await ExchangeQueue.initialize_factory()
         try:
-            # Check latest timestamp from database
+            # Get both oldest and latest timestamps from database
             from fullon_ohlcv.repositories.ohlcv import TradeRepository
             async with TradeRepository(self.exchange, self.symbol, test=False) as repo:
+                oldest_timestamp = await repo.get_oldest_timestamp()
                 latest_timestamp = await repo.get_latest_timestamp()
 
-            # Use latest from database or start from backtest days ago
-            if latest_timestamp:
-                since_timestamp = latest_timestamp
-                logger.info("Found existing trades in database",
-                           symbol=self.symbol,
-                           latest_trade=arrow.get(latest_timestamp).format('YYYY-MM-DD HH:mm:ss UTC'))
+            # Determine the starting timestamp: older of database oldest vs backtest
+            if oldest_timestamp and oldest_timestamp < backtest_timestamp:
+                since_timestamp = oldest_timestamp
+                start_reason = f"database oldest ({arrow.get(oldest_timestamp).format('YYYY-MM-DD HH:mm:ss UTC')})"
             else:
-                since_timestamp = start_time
-                logger.info("No existing trades found, starting from backtest date",
-                           symbol=self.symbol,
-                           start_date=start_time_str)
+                since_timestamp = backtest_timestamp
+                start_reason = f"symbol.backtest {backtest_days} days ({arrow.get(backtest_timestamp).format('YYYY-MM-DD HH:mm:ss UTC')})"
+
+            # If we have latest timestamp and it's newer than our start, use latest instead
+            if latest_timestamp and latest_timestamp > since_timestamp:
+                since_timestamp = latest_timestamp
+                start_reason = f"database latest ({arrow.get(latest_timestamp).format('YYYY-MM-DD HH:mm:ss UTC')})"
+
+            logger.info("Historical collection starting from",
+                       symbol=self.symbol,
+                       start_timestamp=arrow.get(since_timestamp).format('YYYY-MM-DD HH:mm:ss UTC'),
+                       reason=start_reason)
 
             # Create exchange objects
             exchange_obj = self._create_exchange_object()
@@ -422,3 +426,94 @@ class TradeCollector:
                 return "", ""
 
         return credential_provider
+
+    async def _collect_historical_trades(self, handler, start_time=None, end_time=None) -> list:
+        """Collect historical trades with pagination (Phase 1: REST)."""
+        all_trades = []
+
+        if start_time and end_time:
+            # Paginated historical collection (point A to point B)
+            current_time = start_time
+            while current_time < end_time:
+                try:
+                    batch = await handler.get_public_trades(
+                        self.symbol,
+                        since=current_time,
+                        limit=1000
+                    )
+
+                    if not batch:
+                        break
+
+                    all_trades.extend(batch)
+
+                    # Update current_time to last trade timestamp + 1ms
+                    if batch:
+                        last_timestamp = batch[-1].get('timestamp', current_time)
+                        current_time = last_timestamp + 1
+                    else:
+                        break
+
+                    # Rate limiting
+                    await asyncio.sleep(0.1)
+
+                except Exception as e:
+                    logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+                    logger.error("Historical trades batch failed",
+                               current_time=current_time, error=str(e))
+                    break
+        else:
+            # Simple recent data collection (legacy style)
+            all_trades = await handler.get_public_trades(self.symbol, limit=1000)
+
+        logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+        logger.info("Historical trade collection completed",
+                   trades_collected=len(all_trades))
+        return all_trades
+
+    async def start_streaming(self) -> None:
+        """Phase 2: Start WebSocket streaming (like legacy fetch_individual_trades_ws)."""
+        await ExchangeQueue.initialize_factory()
+        try:
+            # Create exchange object for WebSocket streaming
+            exchange_obj = self._create_exchange_object()
+            credential_provider = self._create_credential_provider()
+
+            handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+            await handler.connect()
+
+            async def on_trade_data(trade_data):
+                # Convert trade data to Trade model and save
+                trade = Trade(
+                    timestamp=trade_data.get("timestamp"),
+                    price=trade_data.get("price", 0),
+                    volume=trade_data.get("amount", 0),
+                    side=trade_data.get("side", "BUY"),
+                    type=trade_data.get("type", "MARKET"),
+                )
+
+                async with TradeRepository(self.exchange, self.symbol, test=False) as repo:
+                    success = await repo.save_trades([trade])
+
+                logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+                logger.info("Real-time trade data saved",
+                           symbol=self.symbol,
+                           price=trade.price,
+                           side=trade.side,
+                           success=success)
+
+            # Subscribe to trade stream
+            await handler.subscribe_trades(self.symbol, on_trade_data)
+            self.running = True
+
+            logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+            logger.info("Trade WebSocket streaming started", symbol=self.symbol)
+
+        finally:
+            await ExchangeQueue.shutdown_factory()
+
+    async def stop_streaming(self) -> None:
+        """Stop trade streaming."""
+        self.running = False
+        logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+        logger.info("Trade streaming stopped", symbol=self.symbol)

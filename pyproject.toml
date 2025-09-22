@@ -14,6 +14,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "fullon-exchange @ git+ssh://git@github.com/ingmarAvocado/fullon_exchange.git",
     "fullon-credentials @ git+ssh://git@github.com/ingmarAvocado/fullon_credentials.git@main",
+    "fullon-ohlcv @ git+ssh://git@github.com/ingmarAvocado/fullon_ohlcv.git@main",
 ]
 
 [project.optional-dependencies]

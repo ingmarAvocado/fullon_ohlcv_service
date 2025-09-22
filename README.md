@@ -1,33 +1,78 @@
 # fullon_ohlcv_service
 
-Simple async daemon for OHLCV/trade collection using fullon ecosystem integration.
+✅ **Foundation Complete**: Async daemon for OHLCV and trade data collection using the fullon ecosystem.
 
-## What It Is
+## Overview
 
-~300-500 lines of integration code that coordinates:
-- fullon_exchange: WebSocket data collection
-- fullon_ohlcv: Database storage via repositories  
-- fullon_orm: Database-driven exchange/symbol configuration
-- fullon_cache: Health monitoring
+A lightweight integration service that coordinates data collection from cryptocurrency exchanges using:
+- **fullon_exchange**: WebSocket and REST API data collection
+- **fullon_ohlcv**: Database storage via repositories
+- **fullon_orm**: Database-driven exchange/symbol configuration
+- **fullon_cache**: Health monitoring and real-time updates
+- **fullon_log**: Structured component logging
 
-## What It's NOT
+## Installation
 
-- A data collection framework
-- Exchange API wrapper (use fullon_exchange)
-- Complex error recovery system (fullon_exchange handles this)
-- Configuration management system (reads from fullon_orm database)
+```bash
+# Clone the repository
+git clone https://github.com/ingmarAvocado/fullon_ohlcv_service.git
+cd fullon_ohlcv_service
 
-## Current Status
-
-**Foundation issues missing (#1-10)**. Advanced issues (#11-20) should be closed until basics work.
+# Install dependencies
+poetry install
+```
 
 ## Usage
 
+### Run as Service
+
 ```bash
-poetry install
+# Start the OHLCV/Trade collection daemon
 poetry run python -m fullon_ohlcv_service.daemon
+
+# The service will:
+# 1. Read exchange/symbol configuration from fullon_orm database
+# 2. Start OHLCV collectors for configured symbols
+# 3. Start trade streaming for enabled symbols
+# 4. Monitor health via ProcessCache
+# 5. Handle graceful shutdown on SIGTERM/SIGINT
 ```
 
-Reads exchanges/symbols from fullon_orm database automatically.
+### Run Examples
 
-See `fix_this_fuck.md` for planning corrections and `CLAUDE.md` for simplified development guide.
+```bash
+# Run the example pipeline demonstrating all features
+poetry run python examples/run_example_pipeline.py
+```
+
+## Configuration
+
+The service uses database-driven configuration via fullon_orm:
+
+```python
+# Configuration is read from the database
+# No hardcoded exchange or symbol lists
+# Set up exchanges and symbols via fullon_orm admin interface
+```
+
+### Environment Variables
+
+```bash
+# Optional: Set logging level
+LOG_LEVEL=INFO  # or DEBUG, WARNING, ERROR
+```
+
+## Architecture
+
+The service consists of:
+
+- **OhlcvCollector**: REST-based OHLCV data collection
+- **TradeCollector**: WebSocket-based real-time trade streaming
+- **OhlcvManager**: Coordinates multiple OHLCV collectors
+- **TradeManager**: Manages trade collectors with health monitoring
+- **DatabaseConfig**: Fetches configuration from fullon_orm
+- **Daemon**: Main service orchestration
+
+## Development
+
+See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and architecture documentation.
