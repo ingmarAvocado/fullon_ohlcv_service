@@ -1,15 +1,17 @@
 # fullon_ohlcv_service Examples
 
-This directory contains practical examples showing how to use the fullon_ohlcv_service components. Each example is focused and demonstrates specific functionality.
+This directory contains practical examples demonstrating the fullon_ohlcv_service functionality.
 
-## Overview
+## Available Examples
 
-The examples are organized around the core use cases:
+1. **run_example_pipeline.py** - Complete demonstration pipeline showing:
+   - Service initialization
+   - OHLCV collection setup
+   - Trade streaming configuration
+   - Data retrieval and validation
+   - Health monitoring integration
 
-1. **Daemon Control** - Start/stop/status of the OHLCV service  
-2. **Data Retrieval** - Getting OHLCV and trade data from the database
-3. **WebSocket Callbacks** - Real-time data collection with callbacks
-4. **Historic Data** - Fetching historical data via REST APIs
+2. **demo_data.py** - Demo data generation and testing utilities for development
 
 ## Examples
 
@@ -211,23 +213,17 @@ KRAKEN_API_KEY=your_key
 KRAKEN_SECRET=your_secret
 ```
 
-### Run Individual Examples
+### Run Examples
 
 ```bash
-# Simple daemon control
-python examples/simple_daemon_control.py
+# Run the complete example pipeline
+poetry run python examples/run_example_pipeline.py
 
-# Data retrieval
-python examples/data_retrieval.py
-
-# WebSocket callbacks
-python examples/websocket_callbacks.py
-
-# Historic data fetching
-python examples/historic_ohlcv_rest.py
+# Generate demo data for testing
+poetry run python examples/demo_data.py
 ```
 
-### Run All Examples
+### Run All Examples Sequentially
 
 ```bash
 # Run all examples in sequence
