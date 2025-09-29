@@ -9,6 +9,7 @@ Phase 2: Real-time streaming via WebSocket (like legacy fetch_individual_trades_
 
 import arrow
 import asyncio
+from datetime import datetime, timezone
 from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
 from fullon_ohlcv.models import Trade
@@ -24,6 +25,17 @@ class TradeCollector:
         self.exchange_id = exchange_id
         self.running = False
 
+    def _convert_timestamp(self, timestamp):
+        """Convert timestamp to datetime object, handling both seconds and milliseconds."""
+        if not isinstance(timestamp, (int, float)):
+            return timestamp
+
+        # If timestamp is in milliseconds (> 1e10), convert to seconds
+        if timestamp > 1e10:
+            timestamp = timestamp / 1000
+
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+
     def _format_timestamp_range(self, trades: list[Trade]) -> str:
         """Format trade timestamp range for logging."""
         if not trades:
@@ -32,15 +44,21 @@ class TradeCollector:
         timestamps = [t.timestamp for t in trades]
         start_time = min(timestamps)
         end_time = max(timestamps)
+
+        # Convert to arrow for formatting
         start_str = arrow.get(start_time).format('YYYY-MM-DD HH:mm:ss UTC')
         end_str = arrow.get(end_time).format('YYYY-MM-DD HH:mm:ss UTC')
 
-        # Calculate time span
-        time_span = end_time - start_time
-        hours = time_span / 3600
+        # Calculate time span in seconds
+        if hasattr(start_time, 'timestamp'):  # datetime object
+            time_span_seconds = (end_time - start_time).total_seconds()
+        else:  # unix timestamp
+            time_span_seconds = end_time - start_time
+
+        hours = time_span_seconds / 3600
 
         if hours < 1:
-            span_str = f"{time_span/60:.1f} minutes"
+            span_str = f"{time_span_seconds/60:.1f} minutes"
         elif hours < 24:
             span_str = f"{hours:.1f} hours"
         else:
@@ -54,9 +72,18 @@ class TradeCollector:
             return {"seconds_behind": 0, "lag_description": "No trades"}
 
         import time
-        now = time.time()
+        now_utc = datetime.fromtimestamp(time.time(), tz=timezone.utc)
         latest_trade_time = max(t.timestamp for t in trades)
-        seconds_behind = now - latest_trade_time
+
+        # Convert latest trade time to datetime if it's not already
+        if hasattr(latest_trade_time, 'timestamp'):  # datetime object
+            latest_dt = latest_trade_time
+        else:  # unix timestamp
+            latest_dt = datetime.fromtimestamp(latest_trade_time, tz=timezone.utc)
+
+        # Calculate difference in seconds
+        time_diff = now_utc - latest_dt
+        seconds_behind = time_diff.total_seconds()
 
         # Format lag description
         if seconds_behind < 60:
@@ -97,11 +124,11 @@ class TradeCollector:
 
             trades = [
                 Trade(
-                    timestamp=t["timestamp"],
-                    price=t["price"],
-                    volume=t.get("amount", t.get("volume", 0)),  # Handle different field names
-                    side=t.get("side", "BUY"),
-                    type=t.get("type", "MARKET"),
+                    timestamp=self._convert_timestamp(t["timestamp"]),
+                    price=float(t["price"]),
+                    volume=float(t.get("amount", t.get("volume", 0))),  # Handle different field names
+                    side=str(t.get("side", "BUY")),
+                    type=str(t.get("type", "MARKET")),
                 )
                 for t in trades_data
             ]
@@ -138,7 +165,8 @@ class TradeCollector:
                            symbol=self.symbol)
             return success
         finally:
-            await ExchangeQueue.shutdown_factory()
+            # Note: ExchangeQueue.shutdown_factory() should only be called at application shutdown
+            pass
 
     async def collect_historical_range(self, symbol_obj, test_mode: bool = False) -> bool:
         """Collect historical trades from the oldest available timestamp until caught up.
@@ -226,11 +254,11 @@ class TradeCollector:
                 # Convert to Trade models
                 trades = [
                     Trade(
-                        timestamp=t["timestamp"],
-                        price=t["price"],
-                        volume=t["volume"],
-                        side=t.get("side", "BUY"),
-                        type=t.get("type", "MARKET"),
+                        timestamp=self._convert_timestamp(t["timestamp"]),
+                        price=float(t["price"]),
+                        volume=float(t["volume"]),
+                        side=str(t.get("side", "BUY")),
+                        type=str(t.get("type", "MARKET")),
                     )
                     for t in trades_data
                 ]
@@ -319,7 +347,8 @@ class TradeCollector:
             logger.error("Full traceback", traceback=traceback.format_exc())
             return False
         finally:
-            await ExchangeQueue.shutdown_factory()
+            # Note: ExchangeQueue.shutdown_factory() should only be called at application shutdown
+            pass
 
     async def start_streaming(self, callback=None) -> None:
         """Subscribe to trade stream and persist incoming trades."""
@@ -334,13 +363,26 @@ class TradeCollector:
             await handler.connect()
 
             async def on_trade(trade_data):
-                trade = Trade(
-                    timestamp=trade_data["timestamp"],
-                    price=trade_data["price"],
-                    volume=trade_data["volume"],
-                    side=trade_data.get("side", "BUY"),
-                    type=trade_data.get("type", "MARKET"),
-                )
+                # Check if trade_data is already a Trade object or a dictionary
+                if hasattr(trade_data, 'timestamp') and hasattr(trade_data, 'price'):  # It's already a Trade object
+                    trade = trade_data
+                elif isinstance(trade_data, dict):  # It's a dictionary
+                    trade = Trade(
+                        timestamp=self._convert_timestamp(trade_data["timestamp"]),
+                        price=float(trade_data["price"]),
+                        volume=float(trade_data["volume"]),
+                        side=str(trade_data.get("side", "BUY")),
+                        type=str(trade_data.get("type", "MARKET")),
+                    )
+                else:
+                    # Log what we received and skip
+                    logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+                    logger.debug("Unexpected trade data type",
+                               data_type=type(trade_data).__name__,
+                               has_timestamp=hasattr(trade_data, 'timestamp'),
+                               has_price=hasattr(trade_data, 'price'),
+                               attributes=dir(trade_data) if hasattr(trade_data, '__dict__') else 'no __dict__')
+                    return
 
                 # Log before saving with timestamp
                 logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
@@ -374,55 +416,50 @@ class TradeCollector:
             self.running = True
 
         finally:
-            await ExchangeQueue.shutdown_factory()
+            # Note: ExchangeQueue.shutdown_factory() should only be called at application shutdown
+            pass
 
     async def stop_streaming(self):
         """Stop the streaming collection."""
         self.running = False
-        await ExchangeQueue.shutdown_factory()
+        # Note: ExchangeQueue.shutdown_factory() should only be called at application shutdown
         logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
         logger.info("Streaming stopped", symbol=self.symbol)
 
     def _create_exchange_object(self):
-        """Create exchange object for new fullon_exchange API."""
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        """Create exchange object following modern fullon_exchange pattern."""
+        from fullon_orm.models import CatExchange, Exchange
 
-        return SimpleExchange(self.exchange, "trade_account")
+        # Create a CatExchange instance
+        cat_exchange = CatExchange()
+        cat_exchange.name = self.exchange
+        cat_exchange.id = 1  # Mock ID for examples
+
+        # Create Exchange instance with proper ORM structure
+        exchange = Exchange()
+        # Use exchange_id if available, otherwise default mapping
+        exchange_id_mapping = {"kraken": 1, "bitmex": 2, "hyperliquid": 3}
+        exchange.ex_id = self.exchange_id or exchange_id_mapping.get(self.exchange, 1)
+        exchange.uid = "trade_account"
+        exchange.test = False
+        exchange.cat_exchange = cat_exchange
+
+        return exchange
 
     def _create_credential_provider(self):
-        """Create credential provider for new fullon_exchange API.
+        """Create credential provider following modern fullon_exchange pattern."""
+        from fullon_orm.models import Exchange
 
-        Uses fullon_credentials service when exchange_id is available,
-        falls back to empty credentials for public data.
-        """
-        def credential_provider(exchange_obj):
-            # Use exchange_id for credentials if available, otherwise try to get admin's exchange ID
-            if self.exchange_id:
-                try:
-                    from fullon_credentials import fullon_credentials
-                    secret, key = fullon_credentials(ex_id=self.exchange_id)
-                    logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
-                    logger.info(f"Using credentials for exchange_id {self.exchange_id}")
-                    return key, secret  # Note: fullon_credentials returns (secret, key) but exchange expects (key, secret)
-
-                except (ImportError, ValueError) as e:
-                    logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
-                    logger.error(f"Could not get credentials for exchange_id {self.exchange_id}: {e}")
-                    logger.error(f"Cannot collect private data for {self.exchange}:{self.symbol} without credentials")
-                    return "", ""
-            else:
-                # No exchange_id provided - log this and use empty credentials for public data
-                import os
+        def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+            try:
+                from fullon_credentials import fullon_credentials
+                secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+                return api_key, secret
+            except ValueError as e:
+                # Log warning but continue with empty credentials for public data
                 logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
-                admin_mail = os.getenv('ADMIN_MAIL', 'admin@fullon')
-                logger.warning(f"No exchange_id provided for {self.exchange}:{self.symbol}")
-                logger.warning(f"Admin {admin_mail} should have proper exchange_id mapping for private data access")
-                logger.info(f"Using empty credentials for public data collection only")
+                logger.warning(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
+                logger.info("Using empty credentials for public data collection")
                 return "", ""
 
         return credential_provider
@@ -483,14 +520,26 @@ class TradeCollector:
             await handler.connect()
 
             async def on_trade_data(trade_data):
-                # Convert trade data to Trade model and save
-                trade = Trade(
-                    timestamp=trade_data.get("timestamp"),
-                    price=trade_data.get("price", 0),
-                    volume=trade_data.get("amount", 0),
-                    side=trade_data.get("side", "BUY"),
-                    type=trade_data.get("type", "MARKET"),
-                )
+                # Check if trade_data is already a Trade object or a dictionary
+                if hasattr(trade_data, 'timestamp') and hasattr(trade_data, 'price'):  # It's already a Trade object
+                    trade = trade_data
+                elif isinstance(trade_data, dict):  # It's a dictionary
+                    trade = Trade(
+                        timestamp=self._convert_timestamp(trade_data.get("timestamp")),
+                        price=float(trade_data.get("price", 0)),
+                        volume=float(trade_data.get("amount", trade_data.get("volume", 0))),  # Handle both field names
+                        side=str(trade_data.get("side", "BUY")),
+                        type=str(trade_data.get("type", "MARKET")),
+                    )
+                else:
+                    # Log what we received and skip
+                    logger = get_component_logger(f"fullon.trade.{self.exchange}.{self.symbol}")
+                    logger.debug("Unexpected trade data type",
+                               data_type=type(trade_data).__name__,
+                               has_timestamp=hasattr(trade_data, 'timestamp'),
+                               has_price=hasattr(trade_data, 'price'),
+                               attributes=dir(trade_data) if hasattr(trade_data, '__dict__') else 'no __dict__')
+                    return
 
                 async with TradeRepository(self.exchange, self.symbol, test=False) as repo:
                     success = await repo.save_trades([trade])
@@ -510,7 +559,8 @@ class TradeCollector:
             logger.info("Trade WebSocket streaming started", symbol=self.symbol)
 
         finally:
-            await ExchangeQueue.shutdown_factory()
+            # Note: ExchangeQueue.shutdown_factory() should only be called at application shutdown
+            pass
 
     async def stop_streaming(self) -> None:
         """Stop trade streaming."""

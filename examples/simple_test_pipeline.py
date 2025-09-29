@@ -14,23 +14,37 @@ import signal
 from fullon_exchange.queue import ExchangeQueue
 
 
-# Simple exchange object for fullon_exchange compatibility
-class SimpleExchange:
-    """Simple exchange object for queue system compatibility."""
+def create_example_exchange(exchange_name: str, exchange_id: int = 1):
+    """Create example exchange object following modern fullon_exchange pattern."""
+    from fullon_orm.models import CatExchange, Exchange
 
-    def __init__(self, exchange_name: str):
-        self.ex_id = f"test_{exchange_name}"
-        self.uid = "test_user"
-        self.test = False
-        # Create cat_exchange with name attribute
-        self.cat_exchange = type("CatExchange", (), {"name": exchange_name})()
+    # Create a CatExchange instance
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1  # Mock ID for examples
+
+    # Create Exchange instance with proper ORM structure
+    exchange = Exchange()
+    exchange.ex_id = exchange_id
+    exchange.uid = "example_account"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+
+    return exchange
 
 
 def create_credential_provider():
-    """Create a credential provider for public data (no credentials needed)."""
+    """Create credential provider following modern fullon_exchange pattern."""
+    from fullon_orm.models import Exchange
 
-    def credential_provider(exchange_obj):  # noqa: ARG001
-        return "", ""  # Empty credentials for public data
+    def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+        try:
+            from fullon_credentials import fullon_credentials
+            secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+            return api_key, secret
+        except ValueError:
+            # Return empty credentials for public data
+            return "", ""
 
     return credential_provider
 
@@ -44,7 +58,7 @@ async def test_ohlcv_collection():
 
     try:
         # Create exchange object for Kraken (public data)
-        exchange_obj = SimpleExchange("kraken")
+        exchange_obj = create_example_exchange("kraken", exchange_id=1)
         credential_provider = create_credential_provider()
 
         # Get REST handler
@@ -125,7 +139,7 @@ async def test_integration_patterns():
 
     # This demonstrates the pattern used in the actual collectors
     print("  📋 Pattern: ExchangeQueue.initialize_factory() ✅")
-    print("  📋 Pattern: SimpleExchange object creation ✅")
+    print("  📋 Pattern: create_example_exchange() object creation ✅")
     print("  📋 Pattern: credential_provider function ✅")
     print("  📋 Pattern: get_rest_handler() ✅")
     print("  📋 Pattern: OHLCV capability detection ✅")

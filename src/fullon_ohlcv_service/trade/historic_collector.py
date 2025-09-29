@@ -43,6 +43,10 @@ class HistoricTradeCollector:
         self.symbol = symbol_obj.symbol
         self.exchange_id: Optional[int] = None
 
+        # Live streaming task management
+        self._live_collector: Optional['LiveTradeCollector'] = None
+        self._live_streaming_task: Optional[asyncio.Task] = None
+
         # Setup logging
         self.logger = get_component_logger(
             f"fullon.trade.historic.{self.exchange}.{self.symbol}"
@@ -354,10 +358,12 @@ class HistoricTradeCollector:
             )
 
             # Create and start live collector
-            live_collector = LiveTradeCollector(self.symbol_obj)
+            self._live_collector = LiveTradeCollector(self.symbol_obj)
 
-            # Start streaming in background
-            asyncio.create_task(live_collector.start_streaming())
+            # Start streaming in background and store task reference
+            self._live_streaming_task = asyncio.create_task(
+                self._live_collector.start_streaming()
+            )
 
             self.logger.info(
                 "Live streaming initiated successfully",
@@ -374,3 +380,44 @@ class HistoricTradeCollector:
             )
             # Don't fail the historical collection if live streaming fails
             # Historical data is still valuable on its own
+
+    async def stop(self) -> None:
+        """
+        Stop the historic collector and any associated live streaming.
+
+        This ensures proper cleanup of WebSocket connections and background tasks.
+        """
+        try:
+            self.logger.info(
+                "Stopping historic trade collector",
+                symbol=self.symbol,
+                exchange=self.exchange
+            )
+
+            # Stop live streaming if it's running
+            if self._live_collector:
+                self.logger.debug("Stopping live trade collector")
+                await self._live_collector.stop_streaming()
+
+            # Cancel live streaming task if it exists
+            if self._live_streaming_task and not self._live_streaming_task.done():
+                self.logger.debug("Cancelling live streaming task")
+                self._live_streaming_task.cancel()
+                try:
+                    await self._live_streaming_task
+                except asyncio.CancelledError:
+                    self.logger.debug("Live streaming task cancelled successfully")
+
+            self.logger.info(
+                "Historic trade collector stopped successfully",
+                symbol=self.symbol,
+                exchange=self.exchange
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "Error stopping historic trade collector",
+                symbol=self.symbol,
+                exchange=self.exchange,
+                error=str(e)
+            )

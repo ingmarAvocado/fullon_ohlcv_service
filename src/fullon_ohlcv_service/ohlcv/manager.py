@@ -7,13 +7,9 @@ from fullon_log import get_component_logger
 
 from fullon_ohlcv_service.config.database_config import get_collection_targets
 from fullon_ohlcv_service.config.settings import OhlcvServiceConfig
-from fullon_ohlcv_service.ohlcv.collector import OhlcvCollector
+from fullon_ohlcv_service.ohlcv.collector_master import OhlcvCollectorMaster
 
-# Use mock ProcessCache until fullon_cache is available
-try:
-    from fullon_cache import ProcessCache
-except ImportError:
-    from fullon_ohlcv_service.utils.process_cache import ProcessCache
+from fullon_cache import ProcessCache
 
 
 class OhlcvManager:
@@ -21,7 +17,7 @@ class OhlcvManager:
 
     def __init__(self, config: OhlcvServiceConfig = None) -> None:
         self.logger = get_component_logger("fullon.ohlcv.manager")
-        self.collectors: dict[str, OhlcvCollector] = {}
+        self.collectors: dict[str, OhlcvCollectorMaster] = {}
         self.tasks: dict[str, asyncio.Task] = {}
         self.running = False
         self._health_task: asyncio.Task | None = None
@@ -48,7 +44,17 @@ class OhlcvManager:
             for symbol in symbols:
                 key = f"{exchange}:{symbol}"
                 # Pass config to each collector - use category exchange name for fullon_exchange compatibility
-                collector = OhlcvCollector(exchange_category_name, symbol, exchange_id=ex_id, config=self.config)
+                # TODO: Update to get actual Symbol object from database
+                # For now, create a mock symbol object to fix import error
+                class MockSymbol:
+                    def __init__(self, exchange_name: str, symbol: str, cat_ex_id: int = 1, backtest: int = 30):
+                        self.exchange_name = exchange_name
+                        self.symbol = symbol
+                        self.cat_ex_id = cat_ex_id
+                        self.backtest = backtest
+
+                mock_symbol = MockSymbol(exchange_category_name, symbol)
+                collector = OhlcvCollectorMaster(mock_symbol)
                 self.collectors[key] = collector
 
                 # Start collection task (replaces legacy thread)

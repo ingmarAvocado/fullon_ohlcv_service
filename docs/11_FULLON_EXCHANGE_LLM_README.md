@@ -58,6 +58,17 @@ poetry install --with dev
 # - Business-specific error handling
 ```
 
+## ⚠️ Important Update (September 2025)
+
+**New Credential Management Pattern**: All examples now use the `fullon_credentials` service with proper ORM `Exchange` models.
+
+**Key Changes:**
+- ✅ Use `fullon_credentials` service (kraken=1, bitmex=2, hyperliquid=3)
+- ✅ Proper `fullon_orm.models.Exchange` models (no more `SimpleExchange`)
+- ✅ Direct `credential_provider(exchange_obj: Exchange)` functions
+- ❌ No more environment variable credentials in examples
+- ❌ No more `SimpleExchange` classes
+
 ## 🚀 Quick Start for LLMs
 
 ### 1. Basic Pattern - Always Follow This Structure
@@ -65,43 +76,71 @@ poetry install --with dev
 ```python
 import asyncio
 from fullon_exchange.queue import ExchangeQueue
-from fullon_exchange.core.config import ExchangeCredentials
+from fullon_credentials import fullon_credentials
+from fullon_orm.models import CatExchange, Exchange
+
+# Exchange ID mapping for fullon_credentials
+EXCHANGE_ID_MAPPING = {
+    "kraken": 1,
+    "bitmex": 2,
+    "hyperliquid": 3,
+}
+
+def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
+    """Create an Exchange model instance for examples."""
+    # Create a mock CatExchange (in production this would be from DB)
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1  # Mock ID
+
+    # Create Exchange instance with ORM structure
+    exchange = Exchange()
+    exchange.ex_id = ex_id  # This is what fullon_credentials uses
+    exchange.uid = "example_user"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+
+    return exchange
+
+def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+    """Credential provider function for the queue system."""
+    try:
+        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+        return api_key, secret
+    except ValueError as e:
+        raise ValueError(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
 
 async def main():
     # Step 1: Initialize factory (ALWAYS required)
     await ExchangeQueue.initialize_factory()
 
     try:
-        # Step 2: Create exchange object and credential provider
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Step 2: Get exchange ID from mapping
+        exchange_name = "kraken"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+        if ex_id is None:
+            print(f"❌ Unsupported exchange: {exchange_name}")
+            return
 
-        exchange_obj = SimpleExchange("kraken", "my_account")
-
-        # Step 3: Create credential provider
-        def credential_provider(exchange_obj):
-            return "your_api_key", "your_secret"
+        # Step 3: Create Exchange model instance
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
         # Step 4: Get unified handler
         handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
 
         # Step 5: Connect
         await handler.connect()
-        
-        # Step 5: Use the handler
+
+        # Step 6: Use the handler
         balance = await handler.get_balance()
         print(f"Balance: {balance}")
 
-        # Get OHLCV data (new feature)
+        # Get OHLCV data
         ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1h", limit=100)
         print(f"Retrieved {len(ohlcv)} candles")
-        
+
     finally:
-        # Step 6: Cleanup (ALWAYS required)
+        # Step 7: Cleanup (ALWAYS required)
         await ExchangeQueue.shutdown_factory()
 
 if __name__ == "__main__":
@@ -302,20 +341,40 @@ else:
 
 #### Pattern 1: Multi-Timeframe Analysis
 ```python
+from fullon_credentials import fullon_credentials
+from fullon_orm.models import CatExchange, Exchange
+
+# Exchange ID mapping for fullon_credentials
+EXCHANGE_ID_MAPPING = {
+    "kraken": 1,
+    "bitmex": 2,
+    "hyperliquid": 3,
+}
+
+def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
+    """Create an Exchange model instance for examples."""
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1
+
+    exchange = Exchange()
+    exchange.ex_id = ex_id
+    exchange.uid = "analysis_user"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+    return exchange
+
+def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+    """Public data credential provider."""
+    return "", ""  # Empty credentials for public data
+
 async def analyze_multiple_timeframes():
     await ExchangeQueue.initialize_factory()
     try:
-        # Create exchange object and handler
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
-
-        exchange_obj = SimpleExchange("kraken", "analysis")
-        def credential_provider(exchange_obj):
-            return "", ""  # Public data
+        # Create Exchange model instance
+        exchange_name = "kraken"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
         handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
         await handler.connect()
@@ -349,19 +408,16 @@ async def analyze_multiple_timeframes():
 async def monitor_price_action():
     await ExchangeQueue.initialize_factory()
     try:
-        # Setup handler
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Use standard functions (see top of document)
+        exchange_name = "binance"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        exchange_obj = SimpleExchange("binance", "monitor")
-        def credential_provider(exchange_obj):
+        # Public data credential provider
+        def public_credential_provider(exchange_obj):
             return "", ""
 
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, public_credential_provider)
         await handler.connect()
 
         # Check capabilities first
@@ -387,19 +443,16 @@ async def monitor_price_action():
 async def collect_historical_data():
     await ExchangeQueue.initialize_factory()
     try:
-        # Setup for historical data collection
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Setup for historical data collection (use standard functions)
+        exchange_name = "kraken"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        exchange_obj = SimpleExchange("kraken", "history")
-        def credential_provider(exchange_obj):
+        # Public data credential provider
+        def public_credential_provider(exchange_obj):
             return "", ""
 
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj, public_credential_provider)
         await handler.connect()
 
         # Collect data with proper priority for bulk operations
@@ -470,28 +523,25 @@ except FullonExchangeError as e:
 
 ## 🎯 Common LLM Usage Patterns
 
+**Note**: All patterns below use the new ORM-based approach. For the standard functions (`create_example_exchange`, `credential_provider`, `EXCHANGE_ID_MAPPING`), see the examples at the top of this document.
+
 ### Pattern 1: Simple Data Retrieval
 ```python
 async def get_market_data():
     await ExchangeQueue.initialize_factory()
     try:
-        # Create exchange object
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Use standard pattern from above
+        exchange_name = "kraken"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        exchange_obj = SimpleExchange("kraken", "data_account")
+        # Public data credential provider (empty credentials)
+        def public_credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+            return "", ""  # No credentials needed for public data
 
-        # Public data doesn't need credentials
-        def credential_provider(exchange_obj):
-            return "", ""
-
-        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, public_credential_provider)
         await handler.connect()
-        
+
         # Get ticker data (no credentials needed)
         ticker = await handler.get_ticker("BTC/USD")
         print(f"BTC/USD Price: {ticker['last']}")
@@ -499,7 +549,7 @@ async def get_market_data():
         # Get OHLCV data (public endpoint)
         ohlcv = await handler.get_ohlcv("BTC/USD", timeframe="1h", limit=24)
         print(f"Retrieved {len(ohlcv)} hourly candles")
-        
+
     finally:
         await ExchangeQueue.shutdown_factory()
 ```
@@ -509,23 +559,19 @@ async def get_market_data():
 async def compare_prices():
     await ExchangeQueue.initialize_factory()
     try:
-        # Create exchange objects
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Create Exchange model instances for different exchanges (use standard pattern)
+        kraken_ex_id = EXCHANGE_ID_MAPPING.get("kraken")
+        bitmex_ex_id = EXCHANGE_ID_MAPPING.get("bitmex")
 
-        kraken_obj = SimpleExchange("kraken", "account1")
-        bitmex_obj = SimpleExchange("bitmex", "account1")
+        kraken_obj = create_example_exchange("kraken", kraken_ex_id)
+        bitmex_obj = create_example_exchange("bitmex", bitmex_ex_id)
 
-        # Credential providers (can be different for each exchange)
+        # Public data credential providers for each exchange
         def kraken_creds(exchange_obj):
-            return "", ""  # Or actual credentials
+            return "", ""  # Public data
 
         def bitmex_creds(exchange_obj):
-            return "", ""  # Or actual credentials
+            return "", ""  # Public data
 
         kraken = await ExchangeQueue.get_rest_handler(kraken_obj, kraken_creds)
         bitmex = await ExchangeQueue.get_rest_handler(bitmex_obj, bitmex_creds)
@@ -550,81 +596,138 @@ async def compare_prices():
 
 ### Pattern 3: WebSocket Streaming
 ```python
+import asyncio
+from fullon_credentials import fullon_credentials
+from fullon_orm.models import CatExchange, Exchange
+from fullon_exchange.queue import ExchangeQueue
+
+# Exchange ID mapping for fullon_credentials
+EXCHANGE_ID_MAPPING = {
+    "kraken": 1,
+    "bitmex": 2,
+    "hyperliquid": 3,
+}
+
+def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
+    """Create an Exchange model instance for examples."""
+    # Create a mock CatExchange (in production this would be from DB)
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1  # Mock ID
+
+    # Create Exchange instance with ORM structure
+    exchange = Exchange()
+    exchange.ex_id = ex_id  # This is what fullon_credentials uses
+    exchange.uid = "example_user"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+
+    return exchange
+
+def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+    """Credential provider function for the queue system."""
+    try:
+        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+        return api_key, secret
+    except ValueError as e:
+        raise ValueError(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
+
 async def stream_data():
     await ExchangeQueue.initialize_factory()
     try:
-        # Create exchange object for WebSocket streaming
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Get exchange ID from mapping
+        exchange_name = "kraken"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
 
-        exchange_obj = SimpleExchange("kraken", "stream_account")
-
-        def credential_provider(exchange_obj):
-            return "", ""  # Public WebSocket streams don't need credentials
+        # Create Exchange model instance for queue system
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
         handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
         await handler.connect()
-        
+
         # Define callback
         async def handle_ticker(data):
             print(f"Price update: {data['symbol']} = ${data['last']}")
-        
+
         # Subscribe to real-time updates
         sub_id = await handler.subscribe_ticker("BTC/USD", handle_ticker)
-        
+
         # Stream for 60 seconds
         await asyncio.sleep(60)
-        
+
         # Unsubscribe
         await handler.unsubscribe(sub_id)
-        
+
     finally:
         await ExchangeQueue.shutdown_factory()
 ```
 
 ### Pattern 4: Error Handling
 ```python
+from fullon_credentials import fullon_credentials
+from fullon_orm.models import CatExchange, Exchange
+from fullon_exchange.queue import ExchangeQueue
 from fullon_exchange.core.exceptions import (
     QueueError, TimeoutError, AuthenticationError
 )
 
+# Exchange ID mapping for fullon_credentials
+EXCHANGE_ID_MAPPING = {
+    "kraken": 1,
+    "bitmex": 2,
+    "hyperliquid": 3,
+}
+
+def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
+    """Create an Exchange model instance for examples."""
+    # Create a mock CatExchange (in production this would be from DB)
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1  # Mock ID
+
+    # Create Exchange instance with ORM structure
+    exchange = Exchange()
+    exchange.ex_id = ex_id  # This is what fullon_credentials uses
+    exchange.uid = "example_user"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+
+    return exchange
+
+def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+    """Credential provider function for the queue system."""
+    try:
+        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+        return api_key, secret
+    except ValueError as e:
+        raise ValueError(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
+
 async def robust_trading():
     await ExchangeQueue.initialize_factory()
     try:
-        # Create exchange object for trading
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, account_id: str):
-                self.ex_id = f"{exchange_name}_{account_id}"
-                self.uid = account_id
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+        # Get exchange ID from mapping
+        exchange_name = "kraken"
+        ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
 
-        exchange_obj = SimpleExchange("kraken", "trade_account")
-
-        def credential_provider(exchange_obj):
-            # Trading requires real credentials
-            return "api_key", "secret"
+        # Create Exchange model instance for queue system
+        exchange_obj = create_example_exchange(exchange_name, ex_id)
 
         handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
-        
+
         # Configure with retries
         priority = Priority(level=PriorityLevel.HIGH, timeout=30.0)
-        
+
         try:
             order = await handler.place_order(order_request, priority=priority)
             print(f"Order placed: {order.id}")
-            
+
         except QueueError:
             print("Queue is full, try again later")
-        except TimeoutError: 
+        except TimeoutError:
             print("Operation timed out")
         except AuthenticationError:
             print("Check your API credentials")
-            
+
     finally:
         await ExchangeQueue.shutdown_factory()
 ```
@@ -666,11 +769,18 @@ export LOG_LEVEL=INFO
 export LOG_CONSOLE=true
 export LOG_FILE_PATH=""  # Empty = no file logging
 
-# Exchange credentials
-export KRAKEN_API_KEY="your_api_key"
-export KRAKEN_SECRET="your_secret"
-export BITMEX_API_KEY="your_api_key"
-export BITMEX_SECRET="your_secret"
+# New fullon_credentials pattern - Exchange ID based
+# For Kraken (ex_id=1)
+export EX_ID_1_KEY="your_kraken_api_key"
+export EX_ID_1_SECRET="your_kraken_secret"
+
+# For BitMEX (ex_id=2)
+export EX_ID_2_KEY="your_bitmex_api_key"
+export EX_ID_2_SECRET="your_bitmex_secret"
+
+# For Hyperliquid (ex_id=3)
+export EX_ID_3_KEY="your_hyperliquid_api_key"
+export EX_ID_3_SECRET="your_hyperliquid_secret"
 
 # Testing
 export USE_SANDBOX=true  # Use testnet/sandbox
@@ -678,33 +788,56 @@ export USE_SANDBOX=true  # Use testnet/sandbox
 
 ### Programmatic Configuration
 ```python
-from fullon_exchange.core.config import ExchangeConfig, ExchangeCredentials
+from fullon_credentials import fullon_credentials
+from fullon_orm.models import CatExchange, Exchange
+from fullon_exchange.queue import ExchangeQueue
+from fullon_exchange.core.config import ExchangeConfig
 
-# Configure exchange
+# Exchange ID mapping for fullon_credentials
+EXCHANGE_ID_MAPPING = {
+    "kraken": 1,
+    "bitmex": 2,
+    "hyperliquid": 3,
+}
+
+def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
+    """Create an Exchange model instance for examples."""
+    # Create a mock CatExchange (in production this would be from DB)
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1  # Mock ID
+
+    # Create Exchange instance with ORM structure
+    exchange = Exchange()
+    exchange.ex_id = ex_id  # This is what fullon_credentials uses
+    exchange.uid = "example_user"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+
+    return exchange
+
+def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+    """Credential provider function for the queue system."""
+    try:
+        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+        return api_key, secret
+    except ValueError as e:
+        raise ValueError(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
+
+# Configure exchange with custom settings
 config = ExchangeConfig(
-    credentials=ExchangeCredentials(
-        api_key="your_api_key",
-        secret="your_secret",
-        passphrase="your_passphrase"  # If required
-    ),
     use_sandbox=True,  # Use testnet
     account_id="my_trading_account",
     timeout=30.0,
     rate_limit_buffer=0.1
 )
 
-# Create exchange object with custom config
-class SimpleExchange:
-    def __init__(self, exchange_name: str, account_id: str):
-        self.ex_id = f"{exchange_name}_custom"
-        self.uid = "custom_account"
-        self.test = False
-        self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+# Get exchange ID from mapping
+exchange_name = "kraken"
+ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
 
-exchange_obj = SimpleExchange("kraken", "custom")
-
-def credential_provider(exchange_obj):
-    return config.credentials.api_key, config.credentials.secret
+# Create Exchange model instance
+exchange_obj = create_example_exchange(exchange_name, ex_id)
 
 handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
 # Apply custom config settings to handler if needed
@@ -713,29 +846,24 @@ handler.config = config
 
 ## ⚠️ Important Notes for LLMs
 
-### 1. Always Use Factory Pattern
+### 1. Always Use Modern ORM Pattern
 ```python
-# ✅ CORRECT - Always initialize factory
+# ✅ CORRECT - Use new ORM-based pattern
 await ExchangeQueue.initialize_factory()
 try:
-    # Create exchange object and credential provider
-    class SimpleExchange:
-        def __init__(self, exchange_name: str, account_id: str):
-            self.ex_id = f"{exchange_name}_{account_id}"
-            self.uid = account_id
-            self.test = False
-            self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
-
-    exchange_obj = SimpleExchange("kraken", "account")
-
-    def credential_provider(exchange_obj):
-        return "api_key", "secret"  # Or empty strings for public data
+    # Use standard functions from examples above
+    exchange_name = "kraken"
+    ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+    exchange_obj = create_example_exchange(exchange_name, ex_id)
 
     # Use get_rest_handler for REST operations or get_websocket_handler for streaming
     handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
     # ... use handler
 finally:
     await ExchangeQueue.shutdown_factory()
+
+# ❌ INCORRECT - Don't use old SimpleExchange pattern
+# NEVER create SimpleExchange classes - they are forbidden
 
 # ❌ INCORRECT - Never create adapters directly
 adapter = KrakenAdapter(config)  # DON'T DO THIS
@@ -769,7 +897,29 @@ async with ExchangeQueue.get_context_manager("kraken", "account") as handler:
     pass
 ```
 
-### 4. ORM Models Are Required
+### 4. Use fullon_credentials Service
+```python
+# ✅ CORRECT - Use fullon_credentials with exchange IDs
+from fullon_credentials import fullon_credentials
+
+def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
+    try:
+        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+        return api_key, secret
+    except ValueError as e:
+        raise ValueError(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
+
+# ❌ INCORRECT - Don't use environment variables directly
+api_key = os.getenv("KRAKEN_API_KEY")  # DON'T DO THIS
+
+# ❌ INCORRECT - Don't use factory pattern
+def create_credential_provider(api_key, secret):  # DON'T DO THIS
+    def credential_provider(exchange_obj):
+        return api_key, secret
+    return credential_provider
+```
+
+### 5. ORM Models Are Required
 ```python
 # ✅ CORRECT - Use ORM models
 order_request = OrderRequest(
@@ -831,7 +981,8 @@ Use the ORM models for all operations - they prevent errors and provide IDE supp
 ```python
 from fullon_exchange.queue import ExchangeQueue
 from fullon_exchange.queue.priority import Priority, PriorityLevel
-from fullon_exchange.core.config import ExchangeCredentials
+from fullon_credentials import fullon_credentials
+from fullon_orm.models import CatExchange, Exchange
 from fullon_exchange.core.orm_utils import OrderRequest, CancelRequest
 from fullon_exchange.core.types import OrderType, OrderSide
 from fullon_exchange.core.exceptions import FullonExchangeError
@@ -840,12 +991,12 @@ from fullon_exchange.core.exceptions import FullonExchangeError
 ### Basic Workflow
 ```
 1. await ExchangeQueue.initialize_factory()
-2. Create exchange object: exchange_obj = SimpleExchange(exchange_name, account_id)
-3. Create credential provider: credential_provider = lambda obj: (api_key, secret)
+2. Get exchange ID: ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
+3. Create exchange object: exchange_obj = create_example_exchange(exchange_name, ex_id)
 4. Get handler: handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
 5. await handler.connect()
 6. Use handler with proper priorities
-6. await ExchangeQueue.shutdown_factory()
+7. await ExchangeQueue.shutdown_factory()
 ```
 
 ### Priority Levels

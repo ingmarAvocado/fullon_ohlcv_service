@@ -195,6 +195,14 @@ class OhlcvServiceDaemon:
         # Remove PID file
         self._remove_pid_file()
 
+        # Clean up ExchangeQueue factory
+        try:
+            from fullon_exchange.queue import ExchangeQueue
+            await ExchangeQueue.shutdown_factory()
+            self.logger.debug("ExchangeQueue factory shut down")
+        except Exception as e:
+            self.logger.warning(f"Could not shutdown ExchangeQueue factory: {e}")
+
         # Clean up ProcessCache registration
         try:
             async with ProcessCache() as cache:

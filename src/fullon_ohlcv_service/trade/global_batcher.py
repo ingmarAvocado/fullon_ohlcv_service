@@ -119,9 +119,37 @@ class GlobalTradeBatcher:
         while self.running:
             try:
                 # Calculate time until next batch
-                wait_time = self._calculate_next_batch_time() - time.time()
-                if wait_time > 0:
-                    await asyncio.sleep(wait_time)
+                next_batch_time = self._calculate_next_batch_time()
+                current_time = time.time()
+                wait_time = next_batch_time - current_time
+
+                # Debug logging to understand the issue
+                if wait_time <= 0:
+                    self.logger.debug(
+                        "Batch time calculation issue",
+                        current_time=current_time,
+                        next_batch_time=next_batch_time,
+                        wait_time=wait_time
+                    )
+                    # Force minimum wait to prevent tight loop
+                    wait_time = self._batch_interval  # Use full interval (59.9s)
+                    next_batch_time = current_time + wait_time
+
+                # Log countdown to next batch
+                if wait_time > 1:
+                    wait_display = f"{wait_time:.1f}s"
+                else:
+                    wait_display = f"{wait_time*1000:.0f}ms"
+
+                next_batch_datetime = datetime.fromtimestamp(next_batch_time, tz=timezone.utc)
+
+                self.logger.info(
+                    "Waiting for next batch cycle",
+                    wait_time=wait_display,
+                    next_batch_at=next_batch_datetime.strftime('%H:%M:%S.%f')[:-3] + ' UTC',
+                    active_symbols=len(self.active_symbols)
+                )
+                await asyncio.sleep(wait_time)
 
                 # Process all active symbols
                 await self._process_batch()
@@ -150,38 +178,87 @@ class GlobalTradeBatcher:
     async def _process_batch(self) -> None:
         """Process trades for all active symbols."""
         if not self.active_symbols:
+            self.logger.debug("No active symbols to process")
             return
 
         batch_start = time.time()
         symbols_processed = 0
         total_trades = 0
+        symbol_results = []
 
-        # Process each symbol
+        # Get snapshot of symbols to process
         async with self._lock:
             symbols_to_process = list(self.active_symbols)
 
+        self.logger.info(
+            "Starting batch processing cycle",
+            symbols_count=len(symbols_to_process),
+            symbols=symbols_to_process
+        )
+
+        # Process each symbol
         for symbol_key in symbols_to_process:
             try:
                 exchange, symbol = symbol_key.split(":", 1)
                 trades_count = await self._process_single_symbol(exchange, symbol)
+
+                # Track results for detailed logging
+                symbol_results.append({
+                    'symbol_key': symbol_key,
+                    'exchange': exchange,
+                    'symbol': symbol,
+                    'trades_count': trades_count
+                })
+
                 if trades_count > 0:
                     symbols_processed += 1
                     total_trades += trades_count
+
             except Exception as e:
                 self.logger.error(
                     "Error processing symbol",
                     symbol=symbol_key,
-                    error=str(e)
+                    error=str(e),
+                    error_type=type(e).__name__
                 )
+                symbol_results.append({
+                    'symbol_key': symbol_key,
+                    'trades_count': 0,
+                    'error': str(e)
+                })
 
         batch_duration = time.time() - batch_start
 
+        # Log detailed results for each symbol
+        for result in symbol_results:
+            if result['trades_count'] > 0:
+                self.logger.info(
+                    f"✓ {result['symbol_key']} - {result['trades_count']} trades processed from Redis → PostgreSQL"
+                )
+            elif 'error' in result:
+                self.logger.error(
+                    f"✗ {result['symbol_key']} - processing failed: {result['error']}"
+                )
+            else:
+                # Change from debug to info so we can see which symbols were checked
+                self.logger.info(
+                    f"○ {result['symbol_key']} - no trades found in Redis buffer"
+                )
+
+        # Summary log
         if symbols_processed > 0:
             self.logger.info(
-                "Batch processing completed",
-                symbols_processed=symbols_processed,
+                "📊 Batch cycle completed",
+                symbols_with_trades=symbols_processed,
+                total_symbols=len(symbols_to_process),
                 total_trades=total_trades,
-                duration_seconds=f"{batch_duration:.2f}"
+                duration=f"{batch_duration:.2f}s"
+            )
+        else:
+            self.logger.info(
+                "📊 Batch cycle completed - no trades to process",
+                total_symbols=len(symbols_to_process),
+                duration=f"{batch_duration:.2f}s"
             )
 
     async def _process_single_symbol(self, exchange: str, symbol: str) -> int:
@@ -198,10 +275,7 @@ class GlobalTradeBatcher:
         try:
             # Collect trades from Redis
             async with TradesCache() as cache:
-                trades_data = await cache.get_trades(
-                    f"{exchange}:{symbol}",
-                    limit=1000  # Process up to 1000 trades per batch
-                )
+                trades_data = await cache.get_trades(symbol, exchange)
 
             if not trades_data:
                 return 0
@@ -214,12 +288,7 @@ class GlobalTradeBatcher:
                 success = await repo.save_trades(trades)
 
                 if success:
-                    self.logger.debug(
-                        "Trades saved",
-                        exchange=exchange,
-                        symbol=symbol,
-                        count=len(trades)
-                    )
+                    self.logger.info(f"{symbol}:{exchange} - {len(trades)} trades saved")
                     return len(trades)
                 else:
                     self.logger.warning(
@@ -235,8 +304,11 @@ class GlobalTradeBatcher:
                 "Error processing symbol trades",
                 exchange=exchange,
                 symbol=symbol,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
+            import traceback
+            self.logger.debug("Full traceback", traceback=traceback.format_exc())
             return 0
 
     def _convert_to_trade_objects(self, trades_data: List[Dict[str, Any]]) -> List[Trade]:

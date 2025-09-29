@@ -17,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from fullon_ohlcv_service.trade.manager import TradeManager
+from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 from fullon_orm import DatabaseContext
 from fullon_ohlcv.repositories.ohlcv import CandleRepository
 from fullon_cache import ProcessCache
@@ -28,8 +28,8 @@ from demo_data import (
     install_demo_data
 )
 
-# Global manager instance
-manager = None
+# Global daemon instance
+daemon = None
 
 
 def load_env():
@@ -48,22 +48,31 @@ def load_env():
 
 async def show_system_status():
     """Display collection status and process health"""
-    global manager
+    global daemon
 
     print("\n" + "="*60)
     print("🔍 OHLCV SYSTEM STATUS REPORT")
     print("="*60)
 
-    # Show manager status
-    if manager:
-        status = await manager.get_status()
-        print(f"🚀 Manager Status: {'🟢 Running' if status else '🔴 Stopped'}")
+    # Show daemon status
+    if daemon:
+        status = await daemon.status()
+        print(f"🚀 Daemon Status: {'🟢 Running' if status.get('daemon_running') else '🔴 Stopped'}")
 
-        if status:
-            for key, info in status.items():
-                running = info.get('running', False)
-                status_icon = "🟢" if running else "🔴"
-                print(f"  {status_icon} {key}: {'running' if running else 'stopped'}")
+        # Show OHLCV service status
+        ohlcv_status = status.get('ohlcv_service', {})
+        if ohlcv_status:
+            running = ohlcv_status.get('running', False)
+            collectors = ohlcv_status.get('collectors', [])
+            status_icon = "🟢" if running else "🔴"
+            print(f"  {status_icon} OHLCV Service: {'running' if running else 'stopped'} ({len(collectors)} collectors)")
+
+        # Show Trade service status
+        trade_status = status.get('trade_service', {})
+        if trade_status:
+            collectors = list(trade_status.keys()) if isinstance(trade_status, dict) else []
+            status_icon = "🟢" if collectors else "🔴"
+            print(f"  {status_icon} Trade Service: {len(collectors)} collectors")
 
     # Show registered processes
     try:
@@ -112,7 +121,7 @@ async def show_data_samples():
 
 async def start(use_test_db=False):
     """Start the OHLCV collection pipeline"""
-    global manager
+    global daemon
     test_db_name = None
 
     try:
@@ -136,8 +145,8 @@ async def start(use_test_db=False):
 
         print("🚀 Starting OHLCV collection pipeline...")
 
-        # Create and configure manager
-        manager = TradeManager()
+        # Create and configure daemon
+        daemon = OhlcvServiceDaemon()
 
         # Show what symbols we'll be monitoring
         try:
@@ -160,16 +169,12 @@ async def start(use_test_db=False):
                     symbols = await db.symbols.get_by_exchange_id(exchange['cat_ex_id'])
                     print(f"  • {ex_name}: {len(symbols)} symbols")
 
-            # Start collection for all configured symbols
-            print("⚙️ Starting collectors for all symbols...")
-            async with DatabaseContext() as db:
-                symbols = await db.symbols.get_all()
-                for symbol in symbols[:3]:  # Start with first 3 symbols
-                    try:
-                        await manager.start_collector_with_historical(symbol)
-                        print(f"  ✅ Started collector for {symbol.symbol} on {symbol.exchange_name}")
-                    except Exception as e:
-                        print(f"  ❌ Failed to start collector for {symbol.symbol}: {e}")
+            # Start the daemon (this will start both OHLCV and Trade managers with capability detection)
+            print("⚙️ Starting OHLCV service daemon...")
+            success = await daemon.start()
+            if not success:
+                print("❌ Failed to start daemon")
+                return
 
         except Exception as e:
             print(f"❌ Database connection failed: {e}")
@@ -211,10 +216,10 @@ async def start(use_test_db=False):
                 continue  # Normal timeout, continue loop
 
     finally:
-        # Cleanup manager
-        if manager:
+        # Cleanup daemon
+        if daemon:
             print("🛑 Stopping OHLCV collection pipeline...")
-            await manager.stop()
+            await daemon.stop()
             print("✅ Pipeline stopped")
 
         # Clean up test database if we created one
@@ -226,11 +231,11 @@ async def start(use_test_db=False):
 
 async def stop():
     """Stop the OHLCV collection pipeline"""
-    global manager
+    global daemon
 
-    if manager:
+    if daemon:
         print("🛑 Stopping OHLCV collection pipeline...")
-        await manager.stop()
+        await daemon.stop()
         print("✅ Pipeline stopped")
     else:
         print("⚠️  Pipeline is not running")

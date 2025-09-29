@@ -1,6 +1,7 @@
 """Trade Manager - Multi-symbol trade collection coordination."""
 
 import asyncio
+import os
 
 from fullon_log import get_component_logger
 from fullon_orm.database_context import DatabaseContext
@@ -78,15 +79,25 @@ class TradeManager:
 
         # Get exchange category name from symbol's cat_ex_id
         async with DatabaseContext() as db:
-            cat_exchange = await db.cat_exchanges.get_by_id(symbol_obj.cat_ex_id)
-            exchange_category_name = cat_exchange.name if cat_exchange else "unknown"
+            # Get exchange name from cat_ex_id using fullon_orm pattern
+            cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
+            exchange_category_name = "unknown"
+            for cat_ex in cat_exchanges:
+                if cat_ex.cat_ex_id == symbol_obj.cat_ex_id:
+                    exchange_category_name = cat_ex.name
+                    break
 
-            # Use provided exchange_id or try to find from symbol's exchange relationships
+            # Use provided exchange_id or try to find from user exchanges
             if not exchange_id:
-                # Try to get exchange_id from the symbol's exchange relationships
-                exchanges = await db.exchanges.get_by_cat_ex_id(symbol_obj.cat_ex_id)
-                if exchanges:
-                    exchange_id = exchanges[0].ex_id
+                # Get admin user and their exchanges to find the exchange_id
+                admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
+                admin_uid = await db.users.get_user_id(admin_email)
+                if admin_uid:
+                    user_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
+                    for exchange in user_exchanges:
+                        if exchange.get('cat_ex_id') == symbol_obj.cat_ex_id:
+                            exchange_id = exchange.get('ex_id')
+                            break
 
         key = f"{exchange_category_name}:{symbol_name}"
         if key in self.collectors:
@@ -224,7 +235,7 @@ class TradeManager:
                 for symbol_name in symbols:
                     # Get the Symbol object from database to access backtest parameter
                     symbol_obj = await db.symbols.get_by_symbol(symbol_name)
-                    await self.start_collector_with_historical(exchange_category_name, symbol_name, symbol_obj, exchange_id=ex_id)
+                    await self.start_collector_with_historical_detailed(exchange_category_name, symbol_name, symbol_obj, exchange_id=ex_id)
 
     async def get_status(self) -> dict[str, dict]:
         """Get status of all active trade collectors."""

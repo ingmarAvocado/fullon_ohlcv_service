@@ -6,13 +6,16 @@ Automatically starts after historical collection completes.
 """
 
 import asyncio
+import os
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 
 from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
 from fullon_cache import TradesCache
-from fullon_orm.models import Symbol
+from fullon_orm.models import Symbol, Exchange
+from fullon_orm import DatabaseContext
+from fullon_credentials import fullon_credentials
 
 
 class LiveTradeCollector:
@@ -33,6 +36,7 @@ class LiveTradeCollector:
         self.symbol_obj = symbol_obj
         self.exchange = symbol_obj.exchange_name
         self.symbol = symbol_obj.symbol
+        self.exchange_id: Optional[int] = None
 
         self.logger = get_component_logger(
             f"fullon.trade.live.{self.exchange}.{self.symbol}"
@@ -90,18 +94,52 @@ class LiveTradeCollector:
 
         if self._websocket_handler:
             try:
-                await self._websocket_handler.close()
+                # Try disconnect method first (proper WebSocket cleanup)
+                if hasattr(self._websocket_handler, 'disconnect'):
+                    self.logger.debug("Calling disconnect on WebSocket handler")
+                    await self._websocket_handler.disconnect()
+
+                # Also try close method if available
+                if hasattr(self._websocket_handler, 'close'):
+                    self.logger.debug("Calling close on WebSocket handler")
+                    await self._websocket_handler.close()
+
+                # Try CCXT cleanup method
+                if hasattr(self._websocket_handler, '_cleanup_ccxt_instance'):
+                    self.logger.debug("Calling _cleanup_ccxt_instance")
+                    await self._websocket_handler._cleanup_ccxt_instance()
+
             except Exception as e:
                 self.logger.error("Error closing WebSocket", error=str(e))
 
     async def _setup_websocket(self) -> None:
         """Setup WebSocket connection using fullon_exchange."""
-        exchange_obj = self._create_exchange_object()
-        credential_provider = self._create_credential_provider()
+        exchange_obj = await self.create_exchange_object()
+        credential_provider = self.create_credential_provider()
 
         self._websocket_handler = await ExchangeQueue.get_websocket_handler(
             exchange_obj, credential_provider
         )
+
+        # Connect and authenticate following the websocket_example.py pattern
+        await self._websocket_handler.connect()
+        await self._websocket_handler.authenticate()
+
+        # Wait for connection to be established before subscribing
+        max_wait = 10  # Maximum wait time in seconds
+        wait_time = 0
+        while wait_time < max_wait:
+            if hasattr(self._websocket_handler, 'is_connected') and self._websocket_handler.is_connected():
+                break
+            await asyncio.sleep(0.5)
+            wait_time += 0.5
+
+        if not (hasattr(self._websocket_handler, 'is_connected') and self._websocket_handler.is_connected()):
+            self.logger.warning(
+                "WebSocket not connected after waiting, attempting subscription anyway",
+                symbol=self.symbol,
+                wait_time=wait_time
+            )
 
         await self._websocket_handler.subscribe_trades(
             self.symbol,
@@ -156,9 +194,14 @@ class LiveTradeCollector:
             self.logger.error(
                 "Error processing trade",
                 symbol=self.symbol,
+                exchange=self.exchange,
                 error=str(e),
-                trade=str(trade_data)[:100]
+                error_type=type(e).__name__,
+                trade_data=str(trade_data)[:200]
             )
+            # Also log the full traceback for debugging
+            import traceback
+            self.logger.debug("Full trade processing error traceback", traceback=traceback.format_exc())
 
     async def _register_with_batcher(self) -> None:
         """Register this symbol with GlobalTradeBatcher for processing."""
@@ -178,20 +221,47 @@ class LiveTradeCollector:
                 error=str(e)
             )
 
-    def _create_exchange_object(self) -> Any:
-        """Create exchange object for WebSocket connection."""
-        class SimpleExchange:
-            def __init__(self, exchange_name: str, symbol: str):
-                self.ex_id = f"{exchange_name}_websocket"
-                self.uid = "websocket"
-                self.test = False
-                self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+    async def create_exchange_object(self) -> Exchange:
+        """Get admin user's exchange object for this symbol."""
+        admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
 
-        return SimpleExchange(self.exchange, self.symbol)
+        async with DatabaseContext() as db:
+            admin_uid = await db.users.get_user_id(admin_email)
+            if not admin_uid:
+                raise ValueError(f"Admin user {admin_email} not found in database")
 
-    def _create_credential_provider(self):
-        """Create credential provider for public WebSocket data."""
+            user_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
+
+            # Find admin's exchange for this symbol's exchange type
+            for exchange in user_exchanges:
+                if exchange.get('cat_ex_id') == self.symbol_obj.cat_ex_id:
+                    # Use selectinload to eagerly load the cat_exchange relationship
+                    from sqlalchemy.orm import selectinload
+                    from sqlalchemy import select
+
+                    stmt = select(Exchange).options(selectinload(Exchange.cat_exchange)).where(Exchange.ex_id == exchange.get('ex_id'))
+                    result = await db.session.execute(stmt)
+                    exchange_obj = result.scalar_one_or_none()
+
+                    if exchange_obj:
+                        self.exchange_id = exchange_obj.ex_id
+                        return exchange_obj
+
+        # No exchange found - this is a configuration error
+        raise ValueError(
+            f"No exchange configured for admin user {admin_email} "
+            f"with cat_ex_id {self.symbol_obj.cat_ex_id} ({self.exchange})"
+        )
+
+    def create_credential_provider(self):
+        """Create credential provider - uses admin's credentials if available."""
         def credential_provider(exchange_obj: Any) -> tuple[str, str]:
+            if self.exchange_id:
+                try:
+                    secret, key = fullon_credentials(ex_id=self.exchange_id)
+                    return key, secret  # fullon_credentials returns (secret, key), exchange expects (key, secret)
+                except Exception:
+                    pass
             return "", ""  # Empty credentials for public data
 
         return credential_provider

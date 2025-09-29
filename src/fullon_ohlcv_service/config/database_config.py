@@ -37,7 +37,7 @@ async def get_collection_targets(user_id: int = 1, db_context=None) -> dict[str,
 
         targets = {}
         for exchange in exchanges:
-            # Use the correct field names from ExchangeRepository
+            # Exchanges from get_user_exchanges are dictionaries per fullon_orm docs
             exchange_name = exchange.get('ex_named', exchange.get('name', 'unknown'))
             cat_ex_id = exchange.get('cat_ex_id')
             ex_id = exchange.get('ex_id')  # Get the exchange ID for fullon_credentials
@@ -47,6 +47,7 @@ async def get_collection_targets(user_id: int = 1, db_context=None) -> dict[str,
                 cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
                 exchange_category_name = None
                 for cat_ex in cat_exchanges:
+                    # CatExchange objects have attributes, not dictionary keys
                     if cat_ex.cat_ex_id == cat_ex_id:
                         exchange_category_name = cat_ex.name
                         break
