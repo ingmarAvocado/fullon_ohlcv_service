@@ -1,7 +1,12 @@
 # LLM_README.md
 
+**🚨 CRITICAL FOR ALL LLMs: Repository methods ONLY accept ORM objects - NEVER dictionaries! 🚨**
+
 ## Project Overview
 Async SQLAlchemy ORM library for Fullon trading system. Provides Python ORM models for PostgreSQL database with async/await patterns and connection pooling.
+
+### ⚠️ MANDATORY RULE: ORM Objects Only
+**ALL repository methods expect ORM model instances, NOT dictionaries or individual parameters!**
 
 ## Core Architecture
 - **Async-First**: SQLAlchemy 2.0+ with uvloop optimization (2x performance boost)
@@ -11,21 +16,47 @@ Async SQLAlchemy ORM library for Fullon trading system. Provides Python ORM mode
 - **Connection Pooling**: 20 connections, 10 overflow, hourly recycling
 
 ## Quick Start (Model-Based API)
-```python
-from fullon_orm.database_context import DatabaseContext
-from fullon_orm.models import Bot
 
+### 🔧 Required Imports First:
+```python
+from fullon_orm import DatabaseContext
+from fullon_orm.models import User, Bot, Order, Trade, DryTrade, Exchange, Strategy
+from fullon_orm.models.exchange import CatExchange, CatExchangeParam
+from fullon_orm.models.strategy import CatStrategy, CatStrategyParam, StrategyParam
+from fullon_orm.models.bot import BotLog
+from fullon_orm.models.simulation import Simulation
+```
+
+### ✅ CORRECT Usage Pattern:
+```python
 async def example():
     async with DatabaseContext() as db:
-        # Direct repository access
-        user = User(mail="test@example.com", name="John")
+        # ✅ CORRECT: Create ORM objects first, then pass to repository methods
+        user = User(mail="test@example.com", name="John", password="hashed", f2a="", lastname="", phone="", id_num="")
         user = await db.users.add_user(user)
-        
-        # Create bot (uses model instance)
+
+        # ✅ CORRECT: Create bot with ORM object
         bot = Bot(uid=user.uid, name="MyBot", active=True, dry_run=True)
         bot = await db.bots.add_bot(bot)
-        
+
+        # ✅ CORRECT: Create order with 'volume' field
+        order = Order(bot_id=bot.bot_id, ex_id=1, symbol="BTC/USD", side="buy", volume=1.0, order_type="market", status="New")
+        order_id = await db.orders.save_order(order)
+
         await db.commit()
+
+### ❌ WRONG Usage Pattern:
+```python
+async def wrong_example():
+    async with DatabaseContext() as db:
+        # ❌ WRONG: NEVER pass individual parameters
+        user = await db.users.add_user("test@example.com", "John")  # ERROR!
+
+        # ❌ WRONG: NEVER pass dictionaries
+        bot = await db.bots.add_bot({"name": "MyBot"})  # ERROR!
+
+        # ❌ WRONG: NEVER use 'amount' field (use 'volume')
+        order = Order(amount=1.0)  # ERROR! Use 'volume'
 ```
 
 ## Project Structure
@@ -51,15 +82,32 @@ fullon_orm/
 - **Symbol**: Trading pairs with exchange associations
 - **Strategy/Feed**: Strategy definitions and data feeds
 
-### Repositories (Model-Based API)
+### Repositories (Model-Based API) - ALL METHODS REQUIRE ORM OBJECTS
+
 - **BaseRepository**: Common CRUD (get_by_id, get_all, delete, commit, rollback)
-- **BotRepository**: `add_bot(bot: Bot)` - Complex bot queries with feeds, strategies, logs
-- **ExchangeRepository**: `add_user_exchange(exchange: Exchange)` - Exchange management with caching
-- **SymbolRepository**: Symbol operations with caching
-- **UserRepository**: `add_user(user: User)`, `create(**kwargs)` - User management with search and auth
-- **OrderRepository**: Order status updates and filtering
-- **TradeRepository**: `save_dry_trade(dry_trade: DryTrade)` - Live and dry trade operations
-- **StrategyRepository**: `add_bot_strategy(strategy: Strategy)` - Strategy management
+- **BotRepository**:
+  - ✅ `add_bot(bot: Bot)` - Complex bot queries with feeds, strategies, logs
+  - ✅ `edit_bot(bot: Bot)` - Updates bot using Bot object
+  - ✅ `save_bot_log(logs: List[BotLog])` - Logs using BotLog objects
+  - ✅ `save_simulation(simulation: Simulation)` - Simulation using Simulation object
+- **ExchangeRepository**:
+  - ✅ `add_user_exchange(exchange: Exchange)` - Exchange management with caching
+  - ✅ `install_exchange(cat_exchange: CatExchange, params: List[CatExchangeParam])` - Uses ORM objects
+- **SymbolRepository**: Symbol operations with caching (mostly query methods)
+- **UserRepository**:
+  - ✅ `add_user(user: User)` - User management with search and auth
+  - ✅ `modify_user(user: User)` - Updates using User object
+- **OrderRepository**:
+  - ✅ `save_order(order: Order)` - CRITICAL: Use 'volume' field, NOT 'amount'
+- **TradeRepository**:
+  - ✅ `save_dry_trade(dry_trade: DryTrade)` - Live and dry trade operations
+  - ✅ `save_trades(trades: List[Trade])` - Uses list of Trade objects
+  - ✅ `update_trade(trade: Trade)` - Updates using Trade object
+- **StrategyRepository**:
+  - ✅ `add_bot_strategy(strategy: Strategy)` - Strategy management
+  - ✅ `install_strategy(cat_strategy: CatStrategy, params: List[CatStrategyParam])` - Uses ORM objects
+  - ✅ `edit_base_strat_params(strategy: Strategy)` - Uses Strategy object
+  - ✅ `edit_strat_params(params: List[StrategyParam])` - Uses StrategyParam objects
 
 **📚 For complete method documentation, see [LLM_METHOD_REFERENCE.md](LLM_METHOD_REFERENCE.md)**
 
@@ -157,15 +205,37 @@ poetry run alembic upgrade head
 ## Testing Strategy
 - Each test runs in isolated PostgreSQL database
 - Real database operations (no mocks except error paths)
-- Test fixtures use `db_context` providing clean API: `db_context.users`, `db_context.bots`, etc.
-- TestDatabaseContext wrapper provides repository access with proper transaction isolation
 - Parallel execution support with pytest-xdist (robust event loop handling)
 - Cache testing with mock Redis
 - 100% coverage on all repository modules
 - TDD-based approach with comprehensive test isolation
 
-## Recent Standardization (2024)
-- **Model-Based API**: All repository methods now use ORM model instances instead of dictionaries
-- **Type Safety**: Enhanced type hints and compile-time error detection
+## Recent Standardization (2024) - CRITICAL CHANGES
+
+🚨 **BREAKING CHANGE**: All repository methods now REQUIRE ORM model instances instead of dictionaries
+
+### What Changed:
+- **Model-Based API**: ALL repository methods now use ORM model instances ONLY
+- **NO MORE DICTIONARIES**: Repository methods will FAIL if passed dictionaries or individual parameters
+- **NO MORE INDIVIDUAL PARAMETERS**: Methods like `add_user(email, name)` no longer exist
+- **Type Safety**: Enhanced type hints prevent dictionary usage at compile-time
+- **Field Name Changes**: Order model uses `volume` field, NOT `amount`
+
+### Migration Required:
+```python
+# OLD (BROKEN):
+await db.users.add_user("test@example.com", "John")
+await db.trades.save_trades([{"symbol": "BTC/USD"}])
+
+# NEW (REQUIRED):
+user = User(mail="test@example.com", name="John")
+await db.users.add_user(user)
+
+trades = [Trade(symbol="BTC/USD", side="buy", volume=1.0)]
+await db.trades.save_trades(trades)
+```
+
+### Technical Metrics:
 - **Parallel Testing**: Robust uvloop integration for pytest-xdist
 - **Test Coverage**: 99.68% coverage with 634+ passing tests
+- **100% Repository Compliance**: All examples and tests use ORM objects

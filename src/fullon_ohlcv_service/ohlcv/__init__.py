@@ -8,7 +8,18 @@ This module handles:
 - Database storage via fullon_ohlcv
 """
 
-from fullon_ohlcv_service.ohlcv.collector import OhlcvCollector
+from fullon_ohlcv_service.ohlcv.collector_master import OhlcvCollectorMaster
+from fullon_ohlcv_service.ohlcv.historic_collector import HistoricCollector
+from fullon_ohlcv_service.ohlcv.live_collector import LiveCollector
 from fullon_ohlcv_service.ohlcv.manager import OhlcvManager
 
-__all__ = ["OhlcvCollector", "OhlcvManager"]
+# Alias for backward compatibility
+OhlcvCollector = OhlcvCollectorMaster
+
+__all__ = [
+    "OhlcvCollector",
+    "OhlcvCollectorMaster",
+    "HistoricCollector",
+    "LiveCollector",
+    "OhlcvManager"
+]

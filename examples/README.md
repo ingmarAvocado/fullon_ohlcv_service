@@ -79,19 +79,32 @@ from fullon_exchange.queue import ExchangeQueue
 # Initialize exchange
 await ExchangeQueue.initialize_factory()
 
-# Create exchange object for new API
-class SimpleExchange:
-    def __init__(self, exchange_name: str, account_id: str):
-        self.ex_id = f"{exchange_name}_{account_id}"
-        self.uid = account_id
-        self.test = False
-        self.cat_exchange = type('CatExchange', (), {'name': exchange_name})()
+# Create exchange object following modern fullon_exchange pattern
+def create_example_exchange(exchange_name: str, exchange_id: int = 1):
+    from fullon_orm.models import CatExchange, Exchange
 
-exchange_obj = SimpleExchange("kraken", "ohlcv_account")
+    cat_exchange = CatExchange()
+    cat_exchange.name = exchange_name
+    cat_exchange.id = 1
 
-# Create credential provider for public data
+    exchange = Exchange()
+    exchange.ex_id = exchange_id
+    exchange.uid = "example_account"
+    exchange.test = False
+    exchange.cat_exchange = cat_exchange
+
+    return exchange
+
+exchange_obj = create_example_exchange("kraken", exchange_id=1)
+
+# Create credential provider following modern pattern
 def credential_provider(exchange_obj):
-    return "", ""  # Empty for public data
+    try:
+        from fullon_credentials import fullon_credentials
+        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
+        return api_key, secret
+    except ValueError:
+        return "", ""  # Empty for public data
 
 handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
 

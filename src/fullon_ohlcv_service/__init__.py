@@ -2,8 +2,6 @@
 
 __version__ = "0.1.0"
 
-from .config.settings import config
-from .ohlcv.collector import OhlcvCollector
-from .ohlcv.manager import OhlcvManager
+from .ohlcv import OhlcvCollector, OhlcvManager
 
-__all__ = ['config', 'OhlcvCollector', 'OhlcvManager']
+__all__ = ['OhlcvCollector', 'OhlcvManager']

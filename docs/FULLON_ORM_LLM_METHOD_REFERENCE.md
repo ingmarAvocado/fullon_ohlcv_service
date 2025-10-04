@@ -1,8 +1,27 @@
 # LLM_METHOD_REFERENCE.md
 
+**🚨 MANDATORY FOR ALL LLMs: REPOSITORY METHODS ONLY ACCEPT ORM OBJECTS! 🚨**
+
 ## Complete Method Reference for Repository Pattern Usage
 
-This document provides comprehensive method documentation for all repositories in the fullon_orm package, designed for LLM understanding and code generation.
+**CRITICAL WARNING**: Repository methods MUST receive ORM model instances, NEVER dictionaries or individual parameters!
+
+### ⚠️ BEFORE READING THIS DOCUMENT:
+1. **ALWAYS** import required ORM models first
+2. **ALWAYS** create ORM objects before calling repository methods
+3. **NEVER** pass dictionaries `{"field": "value"}` to repository methods
+4. **NEVER** pass individual parameters `(field1, field2, field3)` to repository methods
+
+### 🔧 Required Imports:
+```python
+from fullon_orm.models import (
+    User, Bot, Order, Trade, DryTrade, Exchange, Symbol, Strategy
+)
+from fullon_orm.models.exchange import CatExchange, CatExchangeParam
+from fullon_orm.models.strategy import CatStrategy, CatStrategyParam, StrategyParam
+from fullon_orm.models.bot import BotLog
+from fullon_orm.models.simulation import Simulation
+```
 
 ## Base Repository Methods
 
@@ -50,9 +69,14 @@ async def search(self, query: str, page: int = 1, page_size: int = 10) -> List[U
 
 ### User Updates & Management
 ```python
-# Modify user attributes
-async def modify_user(self, uid: int, updates: Dict[str, Any]) -> Optional[User]
-"""Updates only provided fields, protects uid field"""
+# ✅ CORRECT: Modify user - USES USER OBJECT
+async def modify_user(self, user: User) -> Optional[User]
+"""Updates user fields from User object - get existing user first, modify fields, then pass User object"""
+
+# ✅ CORRECT Usage Pattern:
+# existing_user = await db.users.get_by_id(user_id)
+# existing_user.name = "New Name"
+# updated_user = await db.users.modify_user(existing_user)
 
 # Update password
 async def update_password(self, uid: int, new_password: str) -> Optional[User]
@@ -69,9 +93,26 @@ async def remove_user(self, user_id: Optional[int] = None, email: Optional[str] 
 
 ### Bot Creation & Management
 ```python
-# Add bot - USES MODEL INSTANCE
+# ✅ CORRECT: Add bot - USES BOT OBJECT ONLY
 async def add_bot(self, bot: Bot) -> Optional[Bot]
 """Adds bot instance, applies defaults: active=True, test=False, dry_run=True"""
+
+# ✅ CORRECT: Edit bot - USES BOT OBJECT ONLY
+async def edit_bot(self, bot: Bot) -> bool
+"""Updates bot fields from Bot object - get existing bot first, modify fields, then pass Bot object"""
+
+# ✅ CORRECT Usage Pattern:
+# existing_bot = await db.bots.get_bot_params(bot_id)
+# existing_bot.name = "Updated Bot Name"
+# success = await db.bots.edit_bot(existing_bot)
+
+# ✅ CORRECT: Save bot logs - USES LIST OF BOTLOG OBJECTS
+async def save_bot_log(self, logs: List[BotLog]) -> bool
+"""Saves bot log entries - pass list of BotLog objects"""
+
+# ✅ CORRECT: Save simulation - USES SIMULATION OBJECT
+async def save_simulation(self, simulation: Simulation) -> Optional[int]
+"""Saves simulation - pass Simulation object"""
 ```
 
 ### Bot Queries
@@ -131,13 +172,22 @@ async def get_active_bots_summary(self, user_id: int) -> List[Dict]
 
 ### Exchange Setup & Management
 ```python
-# Install exchange - USES MODEL INSTANCE for user exchanges
-async def install_exchange(self, name: str, ohlcv: Optional[str] = None, params: Optional[List[Dict]] = None) -> Optional[CatExchange]
+# ✅ CORRECT: Install exchange - USES CATEXCHANGE AND CATEXCHANGEPARAM OBJECTS
+async def install_exchange(self, cat_exchange: CatExchange, params: Optional[List[CatExchangeParam]] = None) -> Optional[CatExchange]
 """Creates exchange catalog entry with optional parameters"""
 
-# Add user exchange - USES MODEL INSTANCE
+# ✅ CORRECT Usage Pattern:
+# cat_exchange = CatExchange(name="binance", ohlcv_view="binance_data")
+# params = [CatExchangeParam(name="api_key", value="test_key")]
+# result = await db.exchanges.install_exchange(cat_exchange, params)
+
+# ✅ CORRECT: Add user exchange - USES EXCHANGE OBJECT
 async def add_user_exchange(self, exchange: Exchange) -> Optional[Exchange]
 """Adds user's exchange configuration, applies default active=True"""
+
+# ✅ CORRECT Usage Pattern:
+# exchange = Exchange(uid=user_id, cat_ex_id=cat_ex_id, name="my_binance", active=True)
+# result = await db.exchanges.add_user_exchange(exchange)
 
 # Remove user exchange
 async def remove_user_exchange(self, ex_id: int) -> bool
@@ -222,16 +272,29 @@ async def search_symbols(self, pattern: str, exchange_id: Optional[int] = None) 
 
 ### Strategy Management
 ```python
-# Add bot strategy - USES MODEL INSTANCE
+# ✅ CORRECT: Add bot strategy - USES STRATEGY OBJECT
 async def add_bot_strategy(self, strategy: Strategy) -> Optional[Strategy]
 """Adds strategy instance, fills defaults from template"""
 
+# ✅ CORRECT: Install strategy - USES CATSTRATEGY AND CATSTRATEGYPARAMS OBJECTS
+async def install_strategy(self, cat_strategy: CatStrategy, params: Optional[List[CatStrategyParam]] = None) -> Optional[int]
+"""Creates or updates strategy template with parameters"""
+
+# ✅ CORRECT Usage Pattern:
+# cat_strategy = CatStrategy(name="ma_crossover", description="MA strategy")
+# params = [CatStrategyParam(name="fast_period", value="12")]
+# result = await db.strategies.install_strategy(cat_strategy, params)
+
+# ✅ CORRECT: Edit base strategy params - USES STRATEGY OBJECT
+async def edit_base_strat_params(self, strategy: Strategy) -> bool
+"""Updates strategy base parameters from Strategy object"""
+
+# ✅ CORRECT: Edit strategy params - USES LIST OF STRATEGYPARAM OBJECTS
+async def edit_strat_params(self, params: List[StrategyParam]) -> bool
+"""Updates custom strategy parameters from StrategyParam objects"""
+
 # Delete bot strategy
 async def del_bot_strategy(self, bot_id: int) -> bool
-
-# Install strategy template
-async def install_strategy(self, strategy_data: Dict[str, Any]) -> Optional[CatStrategy]
-"""Creates or updates strategy template"""
 ```
 
 ### Strategy Queries
@@ -265,13 +328,27 @@ async def del_cat_strategy(self, cat_str_id: Optional[int] = None, name: Optiona
 
 ### Trade Recording
 ```python
-# Save dry trade - USES MODEL INSTANCE
+# ✅ CORRECT: Save dry trade - USES DRYTRADE OBJECT
 async def save_dry_trade(self, dry_trade: DryTrade) -> bool
 """Saves simulated trade, requires DryTrade model instance"""
 
-# Save live trade
-async def save_live_trade(self, trade_data: Dict[str, Any]) -> bool
-"""Saves actual trade execution"""
+# ✅ CORRECT: Save live trades - USES LIST OF TRADE OBJECTS
+async def save_trades(self, trades: List[Trade]) -> bool
+"""Saves live trades, requires list of Trade model instances"""
+
+# ✅ CORRECT Usage Pattern:
+# trades = [Trade(symbol="BTC/USD", side="buy", volume=1.0, price=45000.0)]
+# success = await db.trades.save_trades(trades)
+
+# ✅ CORRECT: Update trade - USES TRADE OBJECT
+async def update_trade(self, trade: Trade) -> None
+"""Updates trade fields from Trade object"""
+
+# ✅ CORRECT Usage Pattern:
+# trade_update = Trade(trade_id=trade_id)
+# trade_update.roi = 150.50
+# trade_update.roi_pct = 3.35
+# await db.trades.update_trade(trade_update)
 ```
 
 ### Trade Queries
@@ -296,8 +373,22 @@ async def get_trade_stats(self, bot_id: int, days: int = 30) -> Dict[str, Any]
 
 ### Order Management
 ```python
-# Create order
-async def create_order(self, order_data: Dict[str, Any]) -> Optional[Order]
+# ✅ CORRECT: Save order - USES ORDER OBJECT (field 'volume', NOT 'amount')
+async def save_order(self, order: Order) -> Optional[int]
+"""Creates order from Order model instance. CRITICAL: Use 'volume' field, NOT 'amount'"""
+
+# ✅ CORRECT Usage Pattern:
+# order = Order(
+#     bot_id=bot_id,
+#     ex_id=ex_id,
+#     symbol="BTC/USD",
+#     side="buy",
+#     volume=1.0,  # ✅ CORRECT: Use 'volume', NOT 'amount'
+#     price=45000.0,
+#     order_type="market",
+#     status="New"
+# )
+# order_id = await db.orders.save_order(order)
 
 # Update order status
 async def update_order_status(self, order_id: int, status: str) -> bool
