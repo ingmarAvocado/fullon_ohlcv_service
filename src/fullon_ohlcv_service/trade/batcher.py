@@ -14,6 +14,7 @@ from fullon_log import get_component_logger
 from fullon_cache import TradesCache
 from fullon_ohlcv.models import Trade
 from fullon_ohlcv.repositories.ohlcv import TradeRepository
+from fullon_orm.models import Trade as ORMTrade
 
 
 class GlobalTradeBatcher:
@@ -311,41 +312,55 @@ class GlobalTradeBatcher:
             self.logger.debug("Full traceback", traceback=traceback.format_exc())
             return 0
 
-    def _convert_to_trade_objects(self, trades_data: List[Dict[str, Any]]) -> List[Trade]:
+    def _convert_to_trade_objects(self, trades_data: List[Any]) -> List[Trade]:
         """
         Convert raw trade data to Trade objects.
 
         Args:
-            trades_data: List of trade dictionaries from Redis
+            trades_data: List of trade items (dictionaries or ORM Trade objects) from Redis
 
         Returns:
             List of Trade objects
         """
         trade_objects = []
 
-        for trade_dict in trades_data:
+        for trade_item in trades_data:
             try:
-                # Handle timestamp conversion
-                timestamp = trade_dict.get('timestamp', 0)
-                if timestamp > 1e12:  # milliseconds
-                    timestamp_dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
-                else:  # seconds
-                    timestamp_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                if isinstance(trade_item, ORMTrade):
+                    # Handle fullon_orm Trade objects
+                    timestamp = trade_item.time
+                    if isinstance(timestamp, (int, float)):
+                        # Convert timestamp to datetime if it's numeric
+                        timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                    trade = Trade(
+                        timestamp=timestamp,
+                        price=float(trade_item.price),
+                        volume=float(trade_item.volume),
+                        side=str(trade_item.side),
+                        type='market'
+                    )
+                else:
+                    # Handle dictionary format (legacy/fallback)
+                    timestamp = trade_item.get('timestamp', 0)
+                    if timestamp > 1e12:  # milliseconds
+                        timestamp_dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                    else:  # seconds
+                        timestamp_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
-                trade = Trade(
-                    timestamp=timestamp_dt,
-                    price=float(trade_dict.get('price', 0)),
-                    volume=float(trade_dict.get('amount', trade_dict.get('volume', 0))),
-                    side=str(trade_dict.get('side', 'unknown')),
-                    type='market'
-                )
+                    trade = Trade(
+                        timestamp=timestamp_dt,
+                        price=float(trade_item.get('price', 0)),
+                        volume=float(trade_item.get('amount', trade_item.get('volume', 0))),
+                        side=str(trade_item.get('side', 'unknown')),
+                        type='market'
+                    )
                 trade_objects.append(trade)
 
             except Exception as e:
                 self.logger.warning(
                     "Failed to convert trade",
                     error=str(e),
-                    trade=str(trade_dict)[:100]
+                    trade=str(trade_item)[:100]
                 )
                 continue
 

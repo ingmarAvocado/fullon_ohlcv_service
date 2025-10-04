@@ -18,7 +18,8 @@ from typing import Optional
 from fullon_log import get_component_logger
 from fullon_cache import ProcessCache
 from fullon_ohlcv_service.ohlcv.manager import OhlcvManager
-from fullon_ohlcv_service.trade.manager import TradeManager
+from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 from fullon_ohlcv_service.config.settings import OhlcvServiceConfig
 
 
@@ -29,7 +30,8 @@ class OhlcvServiceDaemon:
         self.logger = get_component_logger("fullon.ohlcv.daemon")
         self.config = OhlcvServiceConfig.from_env()
         self.ohlcv_manager: Optional[OhlcvManager] = None
-        self.trade_manager: Optional[TradeManager] = None
+        self.live_collector: Optional[LiveTradeCollector] = None
+        self.historic_collector: Optional[HistoricTradeCollector] = None
         self.running = False
         self.pid_file = Path("/tmp/fullon_ohlcv_service.pid")
 

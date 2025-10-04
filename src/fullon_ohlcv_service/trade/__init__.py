@@ -9,7 +9,7 @@ This module handles:
 - Database storage via fullon_ohlcv
 """
 
-from fullon_ohlcv_service.trade.collector import TradeCollector
-from fullon_ohlcv_service.trade.manager import TradeManager
+from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 
-__all__ = ["TradeCollector", "TradeManager"]
+__all__ = ["LiveTradeCollector", "HistoricTradeCollector"]
