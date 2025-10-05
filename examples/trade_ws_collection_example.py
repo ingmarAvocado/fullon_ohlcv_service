@@ -75,30 +75,52 @@ async def set_database():
     logger.info("Demo data installed successfully")
 
 async def historic_collecting():
-    """Test historical trade collection using HistoricTradeCollector."""
+    """Test historical trade collection using HistoricTradeCollector for single symbol."""
     from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 
     try:
-        print("\n📚 Starting historical trade collection...")
+        print("\n📚 Starting historical trade collection (single symbol test)...")
+
+        # Get single test symbol (same pattern as live_collecting)
+        async with DatabaseContext() as db:
+            admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
+            admin_uid = await db.users.get_user_id(admin_email)
+            admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
+            all_symbols = await db.symbols.get_all()
+
+        # Safe symbol access (same as live_collecting)
+        if not all_symbols:
+            raise ValueError("No symbols found in database")
+
+        test_symbol = all_symbols[0] if len(all_symbols) == 1 else all_symbols[1]
+
+        # Safe exchange finding with fallback
+        admin_exchange = next(
+            (ex for ex in admin_exchanges if ex.cat_exchange.name == test_symbol.cat_exchange.name),
+            None
+        )
+
+        if not admin_exchange:
+            raise ValueError(f"No exchange found for {test_symbol.cat_exchange.name}")
+
+        print(f"   Testing with symbol: {test_symbol.cat_exchange.name}:{test_symbol.symbol}")
+        print(f"   Backtest period: {test_symbol.backtest} days")
+
+        # Use HistoricTradeCollector for single symbol
         collector = HistoricTradeCollector()
 
-        # Start bulk historical collection for all configured symbols
-        results = await collector.start_collection()
+        # Collect for single test symbol
+        results = await collector._start_exchange_historic_collector(
+            admin_exchange, [test_symbol]
+        )
 
         # Display results
-        total_trades = sum(results.values())
-        print(f"✅ Historical collection completed!")
-        print(f"   Symbols processed: {len(results)}")
-        print(f"   Total trades collected: {total_trades:,}\n")
+        symbol_key = f"{test_symbol.cat_exchange.name}:{test_symbol.symbol}"
+        trade_count = results.get(symbol_key, 0)
 
-        # Show per-symbol breakdown
-        if results:
-            print("📊 Per-symbol results:")
-            for symbol_key, trade_count in sorted(results.items()):
-                status = "✅" if trade_count > 0 else "⚠️"
-                print(f"  {status} {symbol_key}: {trade_count:,} trades")
-        else:
-            print("⚠️  No symbols configured for historical collection")
+        print(f"✅ Historical collection completed!")
+        print(f"   Symbol: {symbol_key}")
+        print(f"   Trades collected: {trade_count:,}")
 
     except Exception as e:
         print(f"❌ Historical collection failed: {e}")
