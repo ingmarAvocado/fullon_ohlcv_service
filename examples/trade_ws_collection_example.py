@@ -52,6 +52,9 @@ from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
 from fullon_log import get_component_logger
 from fullon_orm import DatabaseContext
 from fullon_orm import init_db
+import arrow
+from datetime import datetime, timezone, timedelta
+from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 
 logger = get_component_logger("fullon.trade.test")
 
@@ -88,15 +91,21 @@ async def historic_collecting():
             admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
             all_symbols = await db.symbols.get_all()
 
-        # Safe symbol access (same as live_collecting)
+        # Get BTC/USD on Kraken specifically
         if not all_symbols:
             raise ValueError("No symbols found in database")
 
-        test_symbol = all_symbols[0] if len(all_symbols) == 1 else all_symbols[1]
+        test_symbol = next(
+            (s for s in all_symbols if s.symbol == "BTC/USD" and s.cat_exchange.name == "kraken"),
+            None
+        )
 
-        # Safe exchange finding with fallback
+        if not test_symbol:
+            raise ValueError("BTC/USD on Kraken not found in database")
+
+        # Find matching admin exchange
         admin_exchange = next(
-            (ex for ex in admin_exchanges if ex.cat_exchange.name == test_symbol.cat_exchange.name),
+            (ex for ex in admin_exchanges if ex.cat_exchange.name == "kraken"),
             None
         )
 
@@ -140,20 +149,26 @@ async def live_collecting():
             admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
             all_symbols = await db.symbols.get_all()
 
-        # Safe symbol access
+        # Get BTC/USD on Kraken specifically
         if not all_symbols:
             raise ValueError("No symbols found in database")
 
-        test_symbol = all_symbols[0] if len(all_symbols) == 1 else all_symbols[1]
+        test_symbol = next(
+            (s for s in all_symbols if s.symbol == "BTC/USD" and s.cat_exchange.name == "kraken"),
+            None
+        )
 
-        # Safe exchange finding with fallback
+        if not test_symbol:
+            raise ValueError("BTC/USD on Kraken not found in database")
+
+        # Find matching admin exchange
         admin_exchange = next(
-            (ex for ex in admin_exchanges if ex.cat_exchange.name == test_symbol.cat_exchange.name),
+            (ex for ex in admin_exchanges if ex.cat_exchange.name == "kraken"),
             None
         )
 
         if not admin_exchange:
-            raise ValueError(f"No exchange found for {test_symbol.cat_exchange.name}")
+            raise ValueError("No Kraken exchange found for admin user")
 
         await collector._start_exchange_collector(exchange_obj=admin_exchange, symbols=[test_symbol])
         print("✅ Live trade collector started")
@@ -177,21 +192,26 @@ async def check_fullon_content():
     Use fullon_ohlcv to verify we have old and recent OHLCV candles.
     Checks last 10 1-minute candles and last 10 1-hour candles.
     """
-    import arrow
-    from datetime import datetime, timezone, timedelta
-    from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
+
 
     try:
         print("\n📊 Checking OHLCV candle data...")
 
-        # Get test symbol (same pattern as other methods)
+        # Get BTC/USD on Kraken specifically (same as other methods)
         async with DatabaseContext() as db:
             all_symbols = await db.symbols.get_all()
 
         if not all_symbols:
             raise ValueError("No symbols found in database")
 
-        test_symbol = all_symbols[0] if len(all_symbols) == 1 else all_symbols[1]
+        test_symbol = next(
+            (s for s in all_symbols if s.symbol == "BTC/USD" and s.cat_exchange.name == "kraken"),
+            None
+        )
+
+        if not test_symbol:
+            raise ValueError("BTC/USD on Kraken not found in database")
+
         exchange_name = test_symbol.cat_exchange.name
         symbol_str = test_symbol.symbol
 
@@ -263,7 +283,7 @@ async def main():
             await set_database()
             await historic_collecting()            
             #await live_collecting()
-            await check_fullon_content()
+            #await check_fullon_content()
         except Exception as e:
             print(f"❌ Cannot create test database: {e}")
             logger.error("Cannot create test database", error=str(e))
