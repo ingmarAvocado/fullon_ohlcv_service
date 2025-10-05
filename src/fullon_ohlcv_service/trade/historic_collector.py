@@ -136,6 +136,13 @@ class HistoricTradeCollector:
             symbol_count=len(symbols),
         )
 
+        # Ensure ExchangeQueue factory is initialized
+        try:
+            await ExchangeQueue.initialize_factory()
+        except RuntimeError:
+            # Already initialized - this is fine
+            pass
+
         # Get REST handler
         try:
             handler = await ExchangeQueue.get_rest_handler(exchange_obj)
