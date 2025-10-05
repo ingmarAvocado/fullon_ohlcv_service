@@ -174,8 +174,79 @@ async def live_collecting():
 
 async def check_fullon_content():
     """
-    we use fullon_ohlcv and check that we have old and recent 1min candle
+    Use fullon_ohlcv to verify we have old and recent OHLCV candles.
+    Checks last 10 1-minute candles and last 10 1-hour candles.
     """
+    import arrow
+    from datetime import datetime, timezone, timedelta
+    from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
+
+    try:
+        print("\n📊 Checking OHLCV candle data...")
+
+        # Get test symbol (same pattern as other methods)
+        async with DatabaseContext() as db:
+            all_symbols = await db.symbols.get_all()
+
+        if not all_symbols:
+            raise ValueError("No symbols found in database")
+
+        test_symbol = all_symbols[0] if len(all_symbols) == 1 else all_symbols[1]
+        exchange_name = test_symbol.cat_exchange.name
+        symbol_str = test_symbol.symbol
+
+        print(f"   Checking symbol: {exchange_name}:{symbol_str}\n")
+
+        # Check 1-minute candles (last 10)
+        print("🕐 Last 10 1-minute candles:")
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(minutes=15)  # Get 15 minutes to ensure we get 10 candles
+
+        async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
+            ohlcv_1m = await repo.fetch_ohlcv(
+                compression=1,
+                period="minutes",
+                fromdate=arrow.get(start_time),
+                todate=arrow.get(end_time)
+            )
+
+            if ohlcv_1m:
+                # Show last 10 candles
+                recent_1m = ohlcv_1m[-10:] if len(ohlcv_1m) >= 10 else ohlcv_1m
+                for ts, o, h, l, c, v in recent_1m:
+                    candle_time = arrow.get(ts).format('YYYY-MM-DD HH:mm:ss')
+                    print(f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}")
+                print(f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})")
+            else:
+                print("   ⚠️  No 1-minute candles found")
+
+        # Check 1-hour candles (last 10)
+        print("\n⏰ Last 10 1-hour candles:")
+        start_time_1h = end_time - timedelta(hours=15)  # Get 15 hours to ensure we get 10 candles
+
+        async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
+            ohlcv_1h = await repo.fetch_ohlcv(
+                compression=1,
+                period="hours",
+                fromdate=arrow.get(start_time_1h),
+                todate=arrow.get(end_time)
+            )
+
+            if ohlcv_1h:
+                # Show last 10 candles
+                recent_1h = ohlcv_1h[-10:] if len(ohlcv_1h) >= 10 else ohlcv_1h
+                for ts, o, h, l, c, v in recent_1h:
+                    candle_time = arrow.get(ts).format('YYYY-MM-DD HH:mm:ss')
+                    print(f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}")
+                print(f"   ✅ Found {len(ohlcv_1h)} 1-hour candles (showing last {len(recent_1h)})")
+            else:
+                print("   ⚠️  No 1-hour candles found")
+
+        print("\n✅ OHLCV candle verification complete")
+
+    except Exception as e:
+        print(f"❌ OHLCV check failed: {e}")
+        logger.exception("OHLCV content check failed")
 
 async def main():
     """Main test function."""
