@@ -9,7 +9,7 @@ Phase 2: Real-time streaming via WebSocket
 Based on legacy pattern but using fullon_exchange library.
 
 Usage:
-    python test_two_phase_collection.py
+    python trade_ws_collection_example.py
 """
 
 import asyncio
@@ -17,6 +17,8 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from fullon_ohlcv_service.ohlcv import historic_collector
 
 # Load environment variables from .env file
 project_root = Path(__file__).parent.parent
@@ -47,44 +49,67 @@ from demo_data import (
     install_demo_data
 )
 from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
-from fullon_cache import TradesCache
 from fullon_log import get_component_logger
 from fullon_orm import DatabaseContext
 from fullon_orm import init_db
-from fullon_ohlcv.repositories.ohlcv import TradeRepository, TimeseriesRepository
-import arrow
+
+logger = get_component_logger("fullon.trade.test")
 
 
-
-
-
-async def test_trade_two_phase():
+async def set_database():
     """Test Trade two-phase collection pattern with proper database setup."""
     print("\n🔍 Testing Trade Two-Phase Collection Pattern")
     print("="*50)
+    # Set up test databases like the working example
+    logger.debug("Creating dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
+    orm_db_name, ohlcv_db_name = await create_dual_test_databases(test_db_base)
+    logger.debug("Using dual test databases", orm_db=orm_db_name, ohlcv_db=ohlcv_db_name)
 
-    logger = get_component_logger("fullon.trade.test")
+    # Initialize database schema
+    logger.debug("Initializing database schema")
+    await init_db()
+
+    # Install demo data following fullon_orm demo_install.py pattern
+    logger.debug("Installing demo data")
+    await install_demo_data()
+    logger.info("Demo data installed successfully")
+
+async def historic_collecting():
+    """Test historical trade collection using HistoricTradeCollector."""
+    from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 
     try:
-        # Set up test databases like the working example
-        logger.debug("Creating dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
-        orm_db_name, ohlcv_db_name = await create_dual_test_databases(test_db_base)
-        logger.debug("Using dual test databases", orm_db=orm_db_name, ohlcv_db=ohlcv_db_name)
+        print("\n📚 Starting historical trade collection...")
+        collector = HistoricTradeCollector()
 
-        # Initialize database schema
-        logger.debug("Initializing database schema")
-        await init_db()
+        # Start bulk historical collection for all configured symbols
+        results = await collector.start_collection()
 
-        # Install demo data following fullon_orm demo_install.py pattern
-        logger.debug("Installing demo data")
-        await install_demo_data()
-        logger.info("Demo data installed successfully")
+        # Display results
+        total_trades = sum(results.values())
+        print(f"✅ Historical collection completed!")
+        print(f"   Symbols processed: {len(results)}")
+        print(f"   Total trades collected: {total_trades:,}\n")
+
+        # Show per-symbol breakdown
+        if results:
+            print("📊 Per-symbol results:")
+            for symbol_key, trade_count in sorted(results.items()):
+                status = "✅" if trade_count > 0 else "⚠️"
+                print(f"  {status} {symbol_key}: {trade_count:,} trades")
+        else:
+            print("⚠️  No symbols configured for historical collection")
+
+    except Exception as e:
+        print(f"❌ Historical collection failed: {e}")
+        logger.exception("Historical collection failed")
 
 
+async def live_collecting():
+    collector = None  # Initialize to avoid NameError in finally
+    try:
         print("🚀 Starting live trade collector...")
-        # Create and start collector directly
         collector = LiveTradeCollector()
-
 
         # Check what's in the cache for all symbols (like ticker service monitoring loop)
         async with DatabaseContext() as db:
@@ -92,72 +117,43 @@ async def test_trade_two_phase():
             admin_uid = await db.users.get_user_id(admin_email)
             admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
             all_symbols = await db.symbols.get_all()
-        for exchange in admin_exchanges:
-            if exchange.cat_exchange.name == all_symbols[1].cat_exchange.name:
-                admin_exchange = exchange
-                break
 
+        # Safe symbol access
+        if not all_symbols:
+            raise ValueError("No symbols found in database")
 
-        await collector._start_exchange_collector(exchange_obj=admin_exchange, symbols=[all_symbols[1]])
-        print("✅ Live trade collector started")
+        test_symbol = all_symbols[0] if len(all_symbols) == 1 else all_symbols[1]
 
-        print("⏳ Running for 70 seconds to allow batcher to process...")
-        await asyncio.sleep(70)
-
-        print("🛑 Stopping collector...")
-        await collector.stop_collection()
-        print("✅ Collector stopped")
-
-        # Check if batcher saved trades to database by querying OHLCV
-        symbol = all_symbols[1]
-        exchange_name = symbol.cat_exchange.name
-        symbol_str = symbol.symbol
-
-        print(f"🔍 Checking database for processed trades: {exchange_name}:{symbol_str}")
-        ts_repo = TimeseriesRepository(exchange=exchange_name, symbol=symbol_str, test=True)
-        await ts_repo.initialize()
-
-        # Query OHLCV for the last 2 minutes (should aggregate from saved trades)
-        from datetime import datetime, timezone, timedelta
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(minutes=2)
-
-        ohlcv_data = await ts_repo.fetch_ohlcv(
-            compression=1,
-            period="minutes",
-            fromdate=arrow.get(start_time),
-            todate=arrow.get(end_time)
+        # Safe exchange finding with fallback
+        admin_exchange = next(
+            (ex for ex in admin_exchanges if ex.cat_exchange.name == test_symbol.cat_exchange.name),
+            None
         )
 
-        print(f"📊 Found {len(ohlcv_data)} OHLCV candles aggregated from saved trades")
+        if not admin_exchange:
+            raise ValueError(f"No exchange found for {test_symbol.cat_exchange.name}")
 
-        if ohlcv_data:
-            print("✅ Batcher successfully processed trades from Redis to PostgreSQL!")
-            print("✅ TimeseriesRepository aggregated trades into OHLCV candles!")
-            # Show first few candles
-            for i, candle in enumerate(ohlcv_data[:3]):
-                ts, o, h, l, c, v = candle
-                print(f"  Candle {i+1}: {ts} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}")
-        else:
-            print("❌ No OHLCV data found - batcher may not have run or no trades were saved/aggregated")
+        await collector._start_exchange_collector(exchange_obj=admin_exchange, symbols=[test_symbol])
+        print("✅ Live trade collector started")
+        print("📊 Trade Cache Status:")
 
-        await ts_repo.close()
-
+        COLLECTION_DURATION = 70  # seconds
+        await asyncio.sleep(COLLECTION_DURATION)
 
     except Exception as e:
         print(f"❌ Trade test failed: {e}")
-        logger.error("Trade test failed", error=str(e))
-        # Try to stop collector if it was started
-        try:
-            if 'collector' in locals():
-                await collector.stop_collection()
-        except:
-            pass
+        logger.exception("Trade test failed")  # Use .exception() for traceback
     finally:
-        # Clean up test databases
-        logger.debug("Dropping dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
-        await drop_dual_test_databases(test_db_orm, test_db_ohlcv)
-        logger.debug("Test databases cleaned up successfully")
+        if collector:  # Only stop if initialized
+            await collector.stop_collection()
+            print("✅ Trade processing stopped")
+
+
+
+async def check_fullon_content():
+    """
+    we use fullon_ohlcv and check that we have old and recent 1min candle
+    """
 
 async def main():
     """Main test function."""
@@ -170,7 +166,22 @@ async def main():
 
     try:
         # Test individual components
-        await test_trade_two_phase()
+        try:
+            await set_database()
+            await historic_collecting()            
+            #await live_collecting()
+            await check_fullon_content()
+        except Exception as e:
+            print(f"❌ Cannot create test database: {e}")
+            logger.error("Cannot create test database", error=str(e))
+        finally:
+            # Clean up test databases
+            try:
+                logger.debug("Dropping dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
+                await drop_dual_test_databases(test_db_orm, test_db_ohlcv)
+                logger.debug("Test databases cleaned up successfully")
+            except Exception as db_cleanup_error:
+                logger.warning("Error during database cleanup", error=str(db_cleanup_error))
 
         print("\n" + "="*60)
         print("✅ TWO-PHASE COLLECTION TEST COMPLETED")
