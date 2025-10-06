@@ -102,13 +102,9 @@ def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
 
     return exchange
 
-def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
-    """Credential provider function for the queue system."""
-    try:
-        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
-        return api_key, secret
-    except ValueError as e:
-        raise ValueError(f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}")
+# NOTE: credential_provider function NO LONGER NEEDED!
+# ExchangeQueue.get_*_handler() now uses fullon_credentials internally
+# (Shown here for reference only - you don't need to define this)
 
 async def main():
     # Step 1: Initialize factory (ALWAYS required)
@@ -125,13 +121,10 @@ async def main():
         # Step 3: Create Exchange model instance
         exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        # Step 4: Get unified handler
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        # Step 4: Get unified handler - automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj)
 
-        # Step 5: Connect
-        await handler.connect()
-
-        # Step 6: Use the handler
+        # Step 5: Use the handler
         balance = await handler.get_balance()
         print(f"Balance: {balance}")
 
@@ -140,7 +133,7 @@ async def main():
         print(f"Retrieved {len(ohlcv)} candles")
 
     finally:
-        # Step 7: Cleanup (ALWAYS required)
+        # Step 6: Cleanup (ALWAYS required)
         await ExchangeQueue.shutdown_factory()
 
 if __name__ == "__main__":
@@ -376,8 +369,8 @@ async def analyze_multiple_timeframes():
         ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
         exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
-        await handler.connect()
+        # Handler is automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj)
 
         # Get multiple timeframes
         timeframes = ["1m", "1h", "1d"]
@@ -417,8 +410,8 @@ async def monitor_price_action():
         def public_credential_provider(exchange_obj):
             return "", ""
 
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, public_credential_provider)
-        await handler.connect()
+        # Handler is automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj)
 
         # Check capabilities first
         if handler.supports_1m_ohlcv() and not handler.needs_trades_for_ohlcv():
@@ -452,8 +445,8 @@ async def collect_historical_data():
         def public_credential_provider(exchange_obj):
             return "", ""
 
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, public_credential_provider)
-        await handler.connect()
+        # Handler is automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj)
 
         # Collect data with proper priority for bulk operations
         from fullon_exchange.queue.priority import Priority, PriorityLevel
@@ -539,8 +532,8 @@ async def get_market_data():
         def public_credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
             return "", ""  # No credentials needed for public data
 
-        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, public_credential_provider)
-        await handler.connect()
+        # Handler is automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj)
 
         # Get ticker data (no credentials needed)
         ticker = await handler.get_ticker("BTC/USD")
@@ -642,8 +635,8 @@ async def stream_data():
         # Create Exchange model instance for queue system
         exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
-        await handler.connect()
+        # Handler is automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj)
 
         # Define callback
         async def handle_ticker(data):
@@ -712,7 +705,8 @@ async def robust_trading():
         # Create Exchange model instance for queue system
         exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-        handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+        # Handler is automatically connected by ExchangeQueue
+        handler = await ExchangeQueue.get_rest_handler(exchange_obj)
 
         # Configure with retries
         priority = Priority(level=PriorityLevel.HIGH, timeout=30.0)
@@ -839,7 +833,8 @@ ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
 # Create Exchange model instance
 exchange_obj = create_example_exchange(exchange_name, ex_id)
 
-handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+# Handler is automatically connected by ExchangeQueue
+handler = await ExchangeQueue.get_rest_handler(exchange_obj)
 # Apply custom config settings to handler if needed
 handler.config = config
 ```
@@ -857,7 +852,8 @@ try:
     exchange_obj = create_example_exchange(exchange_name, ex_id)
 
     # Use get_rest_handler for REST operations or get_websocket_handler for streaming
-    handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+    # Handler is automatically connected by ExchangeQueue
+    handler = await ExchangeQueue.get_rest_handler(exchange_obj)
     # ... use handler
 finally:
     await ExchangeQueue.shutdown_factory()
@@ -993,10 +989,10 @@ from fullon_exchange.core.exceptions import FullonExchangeError
 1. await ExchangeQueue.initialize_factory()
 2. Get exchange ID: ex_id = EXCHANGE_ID_MAPPING.get(exchange_name)
 3. Create exchange object: exchange_obj = create_example_exchange(exchange_name, ex_id)
-4. Get handler: handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
-5. await handler.connect()
-6. Use handler with proper priorities
-7. await ExchangeQueue.shutdown_factory()
+4. Get handler: handler = await ExchangeQueue.get_rest_handler(exchange_obj)
+   (Handler is automatically connected and credentials are handled via fullon_credentials)
+5. Use handler with proper priorities
+6. await ExchangeQueue.shutdown_factory()
 ```
 
 ### Priority Levels

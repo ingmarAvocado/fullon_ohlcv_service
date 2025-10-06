@@ -55,39 +55,20 @@ class TestCapabilityValidation:
     """Test capability validation in _start_exchange_historic_collector."""
 
     @pytest.mark.asyncio
-    async def test_skips_exchange_without_ohlcv_support(
-        self, collector, mock_exchange, mock_symbol
-    ):
-        """Test that exchanges without OHLCV support are skipped gracefully."""
-        # Mock handler that doesn't support OHLCV
-        mock_handler = AsyncMock()
-        mock_handler.supports_ohlcv = Mock(return_value=False)
-
-        with patch(
-            'fullon_ohlcv_service.trade.historic_collector.ExchangeQueue.get_rest_handler',
-            return_value=mock_handler
-        ):
-            # Should return empty results and log warning
-            results = await collector._start_exchange_historic_collector(
-                mock_exchange, [mock_symbol]
-            )
-
-            assert results == {}
-            assert mock_handler.supports_ohlcv.called
-
-    @pytest.mark.asyncio
     async def test_skips_exchange_with_native_ohlcv(
         self, collector, mock_exchange, mock_symbol
     ):
         """Test that exchanges with native OHLCV (not needing trades) are skipped."""
-        # Mock handler that supports OHLCV but doesn't need trades
+        # Mock handler that doesn't need trades (has native OHLCV)
         mock_handler = AsyncMock()
-        mock_handler.supports_ohlcv = Mock(return_value=True)
         mock_handler.needs_trades_for_ohlcv = Mock(return_value=False)
 
         with patch(
             'fullon_ohlcv_service.trade.historic_collector.ExchangeQueue.get_rest_handler',
             return_value=mock_handler
+        ), patch(
+            'fullon_ohlcv_service.trade.historic_collector.ExchangeQueue.initialize_factory',
+            new_callable=AsyncMock
         ):
             # Should return empty results and log info
             results = await collector._start_exchange_historic_collector(
@@ -95,8 +76,8 @@ class TestCapabilityValidation:
             )
 
             assert results == {}
-            assert mock_handler.supports_ohlcv.called
             assert mock_handler.needs_trades_for_ohlcv.called
+
 
     @pytest.mark.asyncio
     async def test_proceeds_when_exchange_needs_trades(
@@ -105,7 +86,6 @@ class TestCapabilityValidation:
         """Test that collection proceeds when exchange needs trades for OHLCV."""
         # Mock handler that needs trades
         mock_handler = AsyncMock()
-        mock_handler.supports_ohlcv = Mock(return_value=True)
         mock_handler.needs_trades_for_ohlcv = Mock(return_value=True)
         mock_handler.get_public_trades = AsyncMock(return_value=[])
 
@@ -119,7 +99,6 @@ class TestCapabilityValidation:
             )
 
             # Should have attempted collection
-            assert mock_handler.supports_ohlcv.called
             assert mock_handler.needs_trades_for_ohlcv.called
             assert "kraken:BTC/USD" in results
 
@@ -130,7 +109,9 @@ class TestCapabilityValidation:
         """Test graceful handling when handler lacks capability methods."""
         # Mock handler without capability methods (raises AttributeError)
         mock_handler = AsyncMock()
-        # Don't define supports_ohlcv or needs_trades_for_ohlcv
+
+        # Make needs_trades_for_ohlcv raise AttributeError
+        mock_handler.needs_trades_for_ohlcv = Mock(side_effect=AttributeError("Method not found"))
         mock_handler.get_public_trades = AsyncMock(return_value=[])
 
         with patch(
@@ -166,33 +147,11 @@ class TestCapabilityMethodsExist:
     """Test that capability validation methods are actually called."""
 
     @pytest.mark.asyncio
-    async def test_supports_ohlcv_is_called(
-        self, collector, mock_exchange, mock_symbol
-    ):
-        """Verify supports_ohlcv() method is actually invoked."""
-        mock_handler = AsyncMock()
-        mock_handler.supports_ohlcv = Mock(return_value=True)
-        mock_handler.needs_trades_for_ohlcv = Mock(return_value=True)
-        mock_handler.get_public_trades = AsyncMock(return_value=[])
-
-        with patch(
-            'fullon_ohlcv_service.trade.historic_collector.ExchangeQueue.get_rest_handler',
-            return_value=mock_handler
-        ):
-            await collector._start_exchange_historic_collector(
-                mock_exchange, [mock_symbol]
-            )
-
-            # Verify the method was actually called
-            mock_handler.supports_ohlcv.assert_called_once()
-
-    @pytest.mark.asyncio
     async def test_needs_trades_for_ohlcv_is_called(
         self, collector, mock_exchange, mock_symbol
     ):
         """Verify needs_trades_for_ohlcv() method is actually invoked."""
         mock_handler = AsyncMock()
-        mock_handler.supports_ohlcv = Mock(return_value=True)
         mock_handler.needs_trades_for_ohlcv = Mock(return_value=False)
 
         with patch(

@@ -154,31 +154,8 @@ class HistoricTradeCollector:
             )
             return results
 
-        # CAPABILITY VALIDATION (required by Issue #41)
-        try:
-            supports_ohlcv = handler.supports_ohlcv()
-            if not supports_ohlcv:
-                logger.warning(
-                    "Exchange does not support OHLCV collection",
-                    exchange=exchange_name,
-                    reason="No OHLCV support"
-                )
-                return results
-
-            needs_trades = handler.needs_trades_for_ohlcv()
-            if not needs_trades:
-                logger.info(
-                    "Exchange supports native OHLCV, skipping trade collection",
-                    exchange=exchange_name
-                )
-                return results
-
-        except AttributeError:
-            # Handler doesn't have capability methods - proceed anyway
-            logger.debug(
-                "Handler missing capability methods, proceeding with collection",
-                exchange=exchange_name
-            )
+        # Note: Trade collection proceeds regardless of OHLCV capabilities
+        # (OHLCV capability checks are for OHLCV collection, not trade collection)
 
         # Collect for all symbols in parallel
         symbol_tasks = []
@@ -237,6 +214,9 @@ class HistoricTradeCollector:
                     symbol_str, since=since_seconds, limit=1000
                 )
 
+                # Filter out None values that may be returned by the API
+                batch_trades = [t for t in batch_trades if t is not None]
+
                 if not batch_trades:
                     logger.debug("No more trades available", symbol=f"{exchange_name}:{symbol_str}")
                     break
@@ -256,7 +236,22 @@ class HistoricTradeCollector:
                         last_timestamp_sec = last_timestamp / 1000
                     else:
                         last_timestamp_sec = last_timestamp
-                    since_timestamp = int((last_timestamp_sec + 0.000001) * 1000)
+
+                    # Calculate time remaining
+                    current_time_sec = current_timestamp / 1000
+                    time_remaining_sec = current_time_sec - last_timestamp_sec
+
+                    # Log progress with time range
+                    from_time = datetime.fromtimestamp(since_seconds, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                    to_time = datetime.fromtimestamp(last_timestamp_sec, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+                    logger.info(
+                        f"Retrieved {len(batch_trades)} trades for {symbol_str}:{exchange_name} "
+                        f"from {from_time} to {to_time}. "
+                        f"{time_remaining_sec:.0f}s left till present time"
+                    )
+
+                    since_timestamp = int((last_timestamp_sec + 1) * 1000)
 
                 # Rate limiting
                 await asyncio.sleep(0.1)

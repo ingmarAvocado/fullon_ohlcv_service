@@ -488,7 +488,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "BTC/USD",
                 "updateframe": "1h",
-                "backtest": 2700,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USD",
@@ -497,7 +497,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "ETH/USD",
                 "updateframe": "1h",
-                "backtest": 300,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "ETH",
                 "quote": "USD",
@@ -506,7 +506,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "ETH/BTC",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "ETH",
                 "quote": "BTC",
@@ -515,7 +515,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "XMR/USD",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "XMR",
                 "quote": "USD",
@@ -524,16 +524,16 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "SOL/USD",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "SOL",
                 "quote": "USD",
                 "futures": True,
             },
             {
-                "symbol": "SUI/USD",
+                "symbol": "BTC/USDC",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "SUI",
                 "quote": "USD",
@@ -542,7 +542,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "LTC/USD",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "LTC",
                 "quote": "USD",
@@ -553,7 +553,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "BTC/USD:BTC",
                 "updateframe": "1h",
-                "backtest": 2700,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USD",
@@ -564,7 +564,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "BTC/USDC:USDC",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USDC",
@@ -573,7 +573,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "ETH/USDC:USDC",
                 "updateframe": "1h",
-                "backtest": 300,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "ETH",
                 "quote": "USDC",
@@ -582,7 +582,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "SOL/USDC:USDC",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "SOL",
                 "quote": "USDC",
@@ -591,7 +591,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "XLM/USDC:USDC",
                 "updateframe": "1h",
-                "backtest": 365,
+                "backtest": 3,
                 "decimals": 6,
                 "base": "XLM",
                 "quote": "USDC",

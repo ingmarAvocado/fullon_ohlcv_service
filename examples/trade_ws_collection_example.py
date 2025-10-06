@@ -18,7 +18,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fullon_ohlcv_service.ohlcv import historic_collector
 
 # Load environment variables from .env file
 project_root = Path(__file__).parent.parent
@@ -55,6 +54,9 @@ from fullon_orm import init_db
 import arrow
 from datetime import datetime, timezone, timedelta
 from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
+from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
+
+
 
 logger = get_component_logger("fullon.trade.test")
 
@@ -79,7 +81,6 @@ async def set_database():
 
 async def historic_collecting():
     """Test historical trade collection using HistoricTradeCollector for single symbol."""
-    from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 
     try:
         print("\n📚 Starting historical trade collection (single symbol test)...")
@@ -96,12 +97,12 @@ async def historic_collecting():
             raise ValueError("No symbols found in database")
 
         test_symbol = next(
-            (s for s in all_symbols if s.symbol == "BTC/USD" and s.cat_exchange.name == "kraken"),
+            (s for s in all_symbols if s.symbol == "BTC/USDC" and s.cat_exchange.name == "kraken"),
             None
         )
 
         if not test_symbol:
-            raise ValueError("BTC/USD on Kraken not found in database")
+            raise ValueError("BTC/USDC on Kraken not found in database")
 
         # Find matching admin exchange
         admin_exchange = next(
@@ -142,6 +143,10 @@ async def live_collecting():
         print("🚀 Starting live trade collector...")
         collector = LiveTradeCollector()
 
+        # Initialize ExchangeQueue factory (required for WebSocket handlers)
+        from fullon_exchange.queue import ExchangeQueue
+        await ExchangeQueue.initialize_factory()
+
         # Check what's in the cache for all symbols (like ticker service monitoring loop)
         async with DatabaseContext() as db:
             admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
@@ -154,12 +159,12 @@ async def live_collecting():
             raise ValueError("No symbols found in database")
 
         test_symbol = next(
-            (s for s in all_symbols if s.symbol == "BTC/USD" and s.cat_exchange.name == "kraken"),
+            (s for s in all_symbols if s.symbol == "BTC/USDC" and s.cat_exchange.name == "kraken"),
             None
         )
 
         if not test_symbol:
-            raise ValueError("BTC/USD on Kraken not found in database")
+            raise ValueError("BTC/USDC on Kraken not found in database")
 
         # Find matching admin exchange
         admin_exchange = next(
@@ -174,7 +179,7 @@ async def live_collecting():
         print("✅ Live trade collector started")
         print("📊 Trade Cache Status:")
 
-        COLLECTION_DURATION = 70  # seconds
+        COLLECTION_DURATION = 80  # seconds
         await asyncio.sleep(COLLECTION_DURATION)
 
     except Exception as e:
@@ -205,12 +210,12 @@ async def check_fullon_content():
             raise ValueError("No symbols found in database")
 
         test_symbol = next(
-            (s for s in all_symbols if s.symbol == "BTC/USD" and s.cat_exchange.name == "kraken"),
+            (s for s in all_symbols if s.symbol == "BTC/USDC" and s.cat_exchange.name == "kraken"),
             None
         )
 
         if not test_symbol:
-            raise ValueError("BTC/USD on Kraken not found in database")
+            raise ValueError("BTC/USDC on Kraken not found in database")
 
         exchange_name = test_symbol.cat_exchange.name
         symbol_str = test_symbol.symbol
@@ -282,8 +287,8 @@ async def main():
         try:
             await set_database()
             await historic_collecting()            
-            #await live_collecting()
-            #await check_fullon_content()
+            await live_collecting()
+            await check_fullon_content()
         except Exception as e:
             print(f"❌ Cannot create test database: {e}")
             logger.error("Cannot create test database", error=str(e))

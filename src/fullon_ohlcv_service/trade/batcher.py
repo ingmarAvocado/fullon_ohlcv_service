@@ -7,6 +7,7 @@ Collects trades from Redis and saves them to PostgreSQL in coordinated batches.
 
 import asyncio
 import time
+import traceback
 from typing import Dict, Set, List, Any
 from datetime import datetime, timezone
 
@@ -308,7 +309,6 @@ class GlobalTradeBatcher:
                 error=str(e),
                 error_type=type(e).__name__
             )
-            import traceback
             self.logger.debug("Full traceback", traceback=traceback.format_exc())
             return 0
 

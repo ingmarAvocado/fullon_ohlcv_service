@@ -14,7 +14,6 @@ from fullon_log import get_component_logger
 from fullon_cache import TradesCache
 from fullon_orm.models import Symbol, Exchange
 from fullon_orm import DatabaseContext
-from fullon_credentials import fullon_credentials
 from .batcher import GlobalTradeBatcher
 
 
@@ -60,10 +59,7 @@ class LiveTradeCollector:
                         break
 
                 if not admin_exchange:
-                    logger.warning(
-                        "No admin exchange found for collection",
-                        exchange=exchange_name
-                    )
+                    logger.warning("No admin exchange found for collection", exchange=exchange_name)
                     continue
 
                 # Start WebSocket for this exchange
@@ -123,17 +119,16 @@ class LiveTradeCollector:
 
             return symbols_by_exchange, admin_exchanges
 
-    async def _start_exchange_collector(self, exchange_obj: Exchange, symbols: List[Symbol]) -> None:
+    async def _start_exchange_collector(
+        self, exchange_obj: Exchange, symbols: List[Symbol]
+    ) -> None:
         """Start WebSocket collection for one exchange with symbol list."""
 
         exchange_name = exchange_obj.cat_exchange.name
 
         logger.info(
-            "Starting WebSocket for exchange",
-            exchange=exchange_name,
-            symbol_count=len(symbols)
+            "Starting WebSocket for exchange", exchange=exchange_name, symbol_count=len(symbols)
         )
-        await ExchangeQueue.initialize_factory()
 
         try:
             # Get WebSocket handler (auto-connects on creation)
@@ -150,16 +145,14 @@ class LiveTradeCollector:
                     try:
                         symbol_str = symbol.symbol
                         logger.info(
-                            "Subscribing to trades",
-                            exchange=exchange_name,
-                            symbol=symbol_str
+                            "Subscribing to trades", exchange=exchange_name, symbol=symbol_str
                         )
                         result = await handler.subscribe_trades(symbol_str, shared_callback)
                         logger.info(
                             "Subscription result",
                             exchange=exchange_name,
                             symbol=symbol_str,
-                            success=result
+                            success=result,
                         )
 
                         # Register symbol with batcher for periodic processing
@@ -170,69 +163,49 @@ class LiveTradeCollector:
                         logger.warning(
                             "Failed to subscribe to trades",
                             exchange=exchange_name,
-                            symbol=symbol.symbol if hasattr(symbol, 'symbol') else str(symbol),
-                            error=str(e))
+                            symbol=symbol.symbol if hasattr(symbol, "symbol") else str(symbol),
+                            error=str(e),
+                        )
             finally:
                 logger.info(
                     "Finished subscribing to trades",
                     exchange=exchange_name,
-                    symbol_count=len(symbols)
+                    symbol_count=len(symbols),
                 )
-
 
         except Exception as e:
             logger.error(
-                "Error starting WebSocket for exchange",
-                exchange=exchange_name,
-                error=str(e)
+                "Error starting WebSocket for exchange", exchange=exchange_name, error=str(e)
             )
             raise
 
     def _create_exchange_callback(self, exchange_name: str):
         """Create shared callback for an exchange."""
+
         async def trade_callback(trade_obj) -> None:
             try:
                 # trade_obj is a fullon_orm.models.Trade object
-                if not hasattr(trade_obj, 'symbol'):
+                if not hasattr(trade_obj, "symbol"):
                     logger.warning(
                         "Trade object missing symbol attribute",
                         exchange=exchange_name,
-                        trade_obj=str(trade_obj)[:100]
+                        trade_obj=str(trade_obj)[:100],
                     )
                     return
 
                 # Push Trade object directly to Redis cache (it has to_dict() method)
                 async with TradesCache() as cache:
                     await cache.push_trade_list(
-                        symbol=trade_obj.symbol,
-                        exchange=exchange_name,
-                        trade=trade_obj
+                        symbol=trade_obj.symbol, exchange=exchange_name, trade=trade_obj
                     )
 
             except Exception as e:
-                logger.error(
-                    "Error processing trade",
-                    exchange=exchange_name,
-                    error=str(e)
-                )
+                logger.error("Error processing trade", exchange=exchange_name, error=str(e))
 
         return trade_callback
 
-
     async def _cleanup(self) -> None:
         """Clean up WebSocket connections."""
-        for exchange_name, handler in self.websocket_handlers.items():
-            try:
-                if hasattr(handler, 'disconnect'):
-                    await handler.disconnect()
-                logger.debug("Disconnected WebSocket handler", exchange=exchange_name)
-            except Exception as e:
-                logger.error(
-                    "Error disconnecting handler",
-                    exchange=exchange_name,
-                    error=str(e)
-                )
-
         self.websocket_handlers.clear()
 
         try:
