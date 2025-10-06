@@ -136,7 +136,7 @@ class LiveTradeCollector:
             # Store handler for cleanup
             self.websocket_handlers[exchange_name] = handler
 
-            logger.info("WebSocket handler obtained", exchange=exchange_name)
+            logger.debug("WebSocket handler obtained", exchange=exchange_name)
 
             # Create shared callback for this exchange
             shared_callback = self._create_exchange_callback(exchange_name)
@@ -144,7 +144,7 @@ class LiveTradeCollector:
                 for symbol in symbols:
                     try:
                         symbol_str = symbol.symbol
-                        logger.info(
+                        logger.debug(
                             "Subscribing to trades", exchange=exchange_name, symbol=symbol_str
                         )
                         result = await handler.subscribe_trades(symbol_str, shared_callback)

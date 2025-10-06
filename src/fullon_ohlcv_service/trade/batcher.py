@@ -61,7 +61,7 @@ class GlobalTradeBatcher:
         symbol_key = f"{exchange}:{symbol}"
         async with self._lock:
             self.active_symbols.add(symbol_key)
-            self.logger.info(
+            self.logger.debug(
                 "Symbol registered for batch processing",
                 exchange=exchange,
                 symbol=symbol,
@@ -145,7 +145,7 @@ class GlobalTradeBatcher:
 
                 next_batch_datetime = datetime.fromtimestamp(next_batch_time, tz=timezone.utc)
 
-                self.logger.info(
+                self.logger.debug(
                     "Waiting for next batch cycle",
                     wait_time=wait_display,
                     next_batch_at=next_batch_datetime.strftime('%H:%M:%S.%f')[:-3] + ' UTC',
@@ -192,7 +192,7 @@ class GlobalTradeBatcher:
         async with self._lock:
             symbols_to_process = list(self.active_symbols)
 
-        self.logger.info(
+        self.logger.debug(
             "Starting batch processing cycle",
             symbols_count=len(symbols_to_process),
             symbols=symbols_to_process
@@ -242,8 +242,8 @@ class GlobalTradeBatcher:
                     f"✗ {result['symbol_key']} - processing failed: {result['error']}"
                 )
             else:
-                # Change from debug to info so we can see which symbols were checked
-                self.logger.info(
+                # Debug level since no trades is a normal occurrence
+                self.logger.debug(
                     f"○ {result['symbol_key']} - no trades found in Redis buffer"
                 )
 
@@ -290,7 +290,7 @@ class GlobalTradeBatcher:
                 success = await repo.save_trades(trades)
 
                 if success:
-                    self.logger.info(f"{symbol}:{exchange} - {len(trades)} trades saved")
+                    self.logger.debug(f"{symbol}:{exchange} - {len(trades)} trades saved")
                     return len(trades)
                 else:
                     self.logger.warning(
