@@ -17,7 +17,8 @@ from typing import Optional
 
 from fullon_log import get_component_logger
 from fullon_cache import ProcessCache
-from fullon_ohlcv_service.ohlcv.manager import OhlcvManager
+from fullon_ohlcv_service.ohlcv.live_collector import LiveOHLCVCollector
+from fullon_ohlcv_service.ohlcv.historic_collector import HistoricOHLCVCollector
 from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
 from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 from fullon_ohlcv_service.config.settings import OhlcvServiceConfig
@@ -29,9 +30,10 @@ class OhlcvServiceDaemon:
     def __init__(self):
         self.logger = get_component_logger("fullon.ohlcv.daemon")
         self.config = OhlcvServiceConfig.from_env()
-        self.ohlcv_manager: Optional[OhlcvManager] = None
-        self.live_collector: Optional[LiveTradeCollector] = None
-        self.historic_collector: Optional[HistoricTradeCollector] = None
+        self.live_ohlcv_collector: Optional[LiveOHLCVCollector] = None
+        self.historic_ohlcv_collector: Optional[HistoricOHLCVCollector] = None
+        self.live_trade_collector: Optional[LiveTradeCollector] = None
+        self.historic_trade_collector: Optional[HistoricTradeCollector] = None
         self.running = False
         self.pid_file = Path("/tmp/fullon_ohlcv_service.pid")
 
@@ -57,29 +59,42 @@ class OhlcvServiceDaemon:
             # Create PID file
             self._create_pid_file()
 
-            # Initialize managers
-            self.ohlcv_manager = OhlcvManager(config=self.config)
-            self.trade_manager = TradeManager()
+            # Initialize collectors
+            self.live_ohlcv_collector = LiveOHLCVCollector()
+            self.historic_ohlcv_collector = HistoricOHLCVCollector()
+            self.live_trade_collector = LiveTradeCollector()
+            self.historic_trade_collector = HistoricTradeCollector()
 
             # Register main daemon process
             # await self._register_daemon()  # Temporarily disabled until ProcessCache API is clarified
 
             # Start services
-            self.logger.info("Starting OHLCV Manager...")
-            await self.ohlcv_manager.start()
+            ohlcv_results = {}
+            trade_results = {}
 
-            self.logger.info("Starting Trade Manager...")
-            await self.trade_manager.start()
+            if self.config.enable_streaming:
+                self.logger.info("Starting Live OHLCV Collector...")
+                await self.live_ohlcv_collector.start_collection()
+
+                self.logger.info("Starting Live Trade Collector...")
+                await self.live_trade_collector.start_collection()
+
+            if self.config.enable_historical:
+                self.logger.info("Starting Historic OHLCV Collector...")
+                ohlcv_results = await self.historic_ohlcv_collector.start_collection()
+
+                self.logger.info("Starting Historic Trade Collector...")
+                trade_results = await self.historic_trade_collector.start_collection()
 
             self.running = True
 
             # Get status for startup summary
-            ohlcv_status = await self.ohlcv_manager.status()
-            trade_status = await self.trade_manager.get_status()
+            ohlcv_count = len(ohlcv_results)
+            trade_count = len(trade_results)
 
             self.logger.info("OHLCV Service Daemon started successfully",
-                           ohlcv_collectors=ohlcv_status.get('collectors', 0),
-                           trade_collectors=trade_status.get('collectors', 0))
+                           ohlcv_symbols=ohlcv_count,
+                           trade_symbols=trade_count)
 
             return True
 
@@ -99,13 +114,13 @@ class OhlcvServiceDaemon:
             self.running = False
 
             # Stop services
-            if self.trade_manager:
-                self.logger.info("Stopping Trade Manager...")
-                await self.trade_manager.stop()
+            if self.live_trade_collector:
+                self.logger.info("Stopping Live Trade Collector...")
+                await self.live_trade_collector.stop_collection()
 
-            if self.ohlcv_manager:
-                self.logger.info("Stopping OHLCV Manager...")
-                await self.ohlcv_manager.stop()
+            if self.live_ohlcv_collector:
+                self.logger.info("Stopping Live OHLCV Collector...")
+                await self.live_ohlcv_collector.stop_collection()
 
             # Cleanup
             await self.cleanup()
@@ -133,11 +148,16 @@ class OhlcvServiceDaemon:
             "trade_service": {}
         }
 
-        if self.ohlcv_manager:
-            status["ohlcv_service"] = await self.ohlcv_manager.status()
+        # Collectors don't have status methods, just report if they're initialized
+        status["ohlcv_service"] = {
+            "live_collector": self.live_ohlcv_collector is not None,
+            "historic_collector": self.historic_ohlcv_collector is not None
+        }
 
-        if self.trade_manager:
-            status["trade_service"] = await self.trade_manager.get_status()
+        status["trade_service"] = {
+            "live_collector": self.live_trade_collector is not None,
+            "historic_collector": self.historic_trade_collector is not None
+        }
 
         return status
 

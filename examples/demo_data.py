@@ -540,7 +540,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
                 "futures": True,
             },
             {
-                "symbol": "LTC/USD",
+                "symbol": "BTC/USDC",
                 "updateframe": "1h",
                 "backtest": 3,
                 "decimals": 6,

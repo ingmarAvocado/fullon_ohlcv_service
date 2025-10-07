@@ -8,6 +8,31 @@ Quick guide for LLMs to use this PostgreSQL/TimescaleDB library for trading data
 poetry add git+ssh://git@github.com/ingmarAvocado/fullon_ohlcv.git
 ```
 
+## ⚙️ Database Initialization
+
+**Important**: Before saving data, you must initialize symbol tables using `init_symbol()`:
+
+```python
+async with TradeRepository("binance", "BTC/USDT", test=True) as repo:
+    # Initialize symbol creates 4 database objects:
+    # 1. {symbol}_trades - Raw trade data table
+    # 2. {symbol}_candles1m - Pre-computed candles table
+    # 3. {symbol}_candles1m_view - Continuous aggregate view
+    # 4. {symbol}_ohlcv - Alias view (points to main source)
+    await repo.init_symbol(main="view")  # main: "view", "candles", or "trades"
+```
+
+**What `init_symbol()` creates**:
+- `binance.btc_usdt_trades` (TimescaleDB hypertable)
+- `binance.btc_usdt_candles1m` (TimescaleDB hypertable)
+- `binance.btc_usdt_candles1m_view` (Continuous aggregate - auto-refreshes)
+- `binance.btc_usdt_ohlcv` (Alias view - single source of truth for queries)
+
+**Choose `main` parameter**:
+- `"view"` (default) - Fastest, uses continuous aggregate
+- `"candles"` - Uses pre-computed candles table
+- `"trades"` - Aggregates from raw trade data
+
 ## 🎯 Usage Examples
 
 ### Save Trade Data
@@ -21,6 +46,9 @@ from fullon_ohlcv.models import Trade
 async def main():
     # Initialize with test=True for testing
     async with TradeRepository("binance", "BTC/USDT", test=True) as repo:
+        # Initialize symbol tables
+        await repo.init_symbol(main="view")
+
         # Create trades
         trades = [
             Trade(
@@ -65,6 +93,9 @@ from fullon_ohlcv.models import Candle
 async def main():
     # Use context manager (recommended)
     async with CandleRepository("binance", "ETH/USDT", test=True) as repo:
+        # Initialize symbol tables
+        await repo.init_symbol(main="candles")
+
         # Create candles
         base_time = datetime.now(timezone.utc)
         candles = [
@@ -111,6 +142,9 @@ from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 
 async def main():
     async with TimeseriesRepository("binance", "BTC/USDT", test=True) as repo:
+        # Initialize symbol tables
+        await repo.init_symbol(main="view")
+
         # Generate OHLCV candles from existing trade data
         end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(hours=1)
@@ -132,18 +166,22 @@ if __name__ == "__main__":
 
 ## 🔑 Key Points
 
-1. **Always async** - Use `async`/`await` for all operations
-2. **Use context managers** - `async with Repository(...) as repo:` (recommended) or manual `await repo.initialize()` + `await repo.close()`
-3. **UTC timestamps** - Always use `datetime.now(timezone.utc)`
-4. **Test mode** - Use `test=True` for testing to avoid production data
-5. **Performance** - Call `install_uvloop()` before `asyncio.run()` for better performance
+1. **Initialize symbols first** - Call `await repo.init_symbol(main="view")` after repo initialization
+2. **Always async** - Use `async`/`await` for all operations
+3. **Use context managers** - `async with Repository(...) as repo:` (recommended) or manual `await repo.initialize()` + `await repo.close()`
+4. **UTC timestamps** - Always use `datetime.now(timezone.utc)`
+5. **Test mode** - Use `test=True` for testing to avoid production data
+6. **Performance** - Call `install_uvloop()` before `asyncio.run()` for better performance
 
 ## 📊 What Gets Created
 
-For `TradeRepository("binance", "BTC/USDT")`:
-- Schema: `binance` 
-- Table: `binance.BTC_USDT_trades`
-- TimescaleDB hypertable for performance
+When you call `init_symbol(main="view")` for `TradeRepository("binance", "BTC/USDT")`:
+- **Schema**: `binance`
+- **Tables/Views**:
+  - `binance.btc_usdt_trades` - Raw trade data (TimescaleDB hypertable)
+  - `binance.btc_usdt_candles1m` - 1-minute candles (TimescaleDB hypertable)
+  - `binance.btc_usdt_candles1m_view` - Continuous aggregate (auto-refreshing)
+  - `binance.btc_usdt_ohlcv` - Alias view pointing to candles1m_view
 
 ## 🔗 Quick References
 

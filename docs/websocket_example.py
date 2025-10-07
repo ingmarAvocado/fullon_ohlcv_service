@@ -80,7 +80,6 @@ import asyncio
 import sys
 
 from dotenv import load_dotenv
-from fullon_credentials import fullon_credentials
 from fullon_orm.models import CatExchange, Exchange
 
 from fullon_exchange.queue.exchange_queue import ExchangeQueue
@@ -110,7 +109,7 @@ def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
 
     Usage:
         exchange_obj = create_example_exchange('kraken', 1)
-        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj)  # Uses fullon_credentials automatically
 
     Note:
         This function creates a minimal Exchange model instance specifically
@@ -125,7 +124,7 @@ def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
     # Create Exchange instance with ORM structure
     exchange = Exchange()
     exchange.ex_id = ex_id  # This is what fullon_credentials uses
-    exchange.uid = "example_user"
+    exchange.uid = 1
     exchange.test = False
     exchange.cat_exchange = cat_exchange
     # Note: api_key and secret are resolved by fullon_credentials, not stored here
@@ -133,40 +132,8 @@ def create_example_exchange(exchange_name: str, ex_id: int) -> Exchange:
     return exchange
 
 
-def credential_provider(exchange_obj: Exchange) -> tuple[str, str]:
-    """
-    Resolve credentials using fullon_credentials service.
-
-    The ExchangeQueue system uses provider functions for dynamic credential
-    management. This function uses fullon_credentials to securely resolve
-    API credentials from .env files or Google Secrets Manager based on
-    the exchange ID.
-
-    Args:
-        exchange_obj (Exchange): fullon_orm Exchange model with ex_id
-
-    Returns:
-        tuple[str, str]: (api_key, secret) for authentication
-
-    Raises:
-        ValueError: If credentials cannot be resolved for the exchange ID
-
-    Example:
-        handler = await ExchangeQueue.get_websocket_handler(exchange_obj, credential_provider)
-
-    Note:
-        This function extracts the ex_id from the Exchange ORM model
-        and uses fullon_credentials(ex_id) to resolve credentials securely.
-        Handles credential resolution errors gracefully.
-    """
-    try:
-        # fullon_credentials returns (secret, key) - note the order!
-        secret, api_key = fullon_credentials(ex_id=exchange_obj.ex_id)
-        return api_key, secret
-    except ValueError as e:
-        raise ValueError(
-            f"Failed to resolve credentials for exchange ID {exchange_obj.ex_id}: {e}"
-        )
+# Credential provider function is no longer needed!
+# ExchangeQueue.get_websocket_handler() now uses fullon_credentials directly
 
 
 # Global storage for last messages and counters
@@ -324,10 +291,10 @@ async def test_websocket(exchange: str = "kraken", ex_id: int = 1):
         For Google Secrets: fullon-ex-1-api-key, fullon-ex-1-api-secret
 
     Example:
-        await test_websocket_with_fullon_credentials('kraken', ex_id=1)
+        await test_websocket('kraken', ex_id=1)
     """
     print(
-        f"Testing {exchange.upper()} WebSocket with fullon_credentials (ex_id: {ex_id})..."
+        f"Testing {exchange.upper()} WebSocket (ex_id: {ex_id})..."
     )
 
     # Load environment variables (for .env file approach)
@@ -337,30 +304,13 @@ async def test_websocket(exchange: str = "kraken", ex_id: int = 1):
         # Initialize ExchangeQueue factory
         await ExchangeQueue.initialize_factory()
 
-        # Create Exchange model instance with proper ex_id for fullon_credentials
+        # Create Exchange model instance with proper ex_id
+        # ExchangeQueue will handle credential resolution internally via fullon_credentials
         exchange_obj = create_example_exchange(exchange, ex_id)
 
-        # Test credential resolution before proceeding
-        try:
-            test_api_key, test_secret = credential_provider(exchange_obj)
-            print(f"✅ Credentials resolved for exchange ID {ex_id}")
-        except ValueError as e:
-            print(f"❌ Credential resolution failed: {e}")
-            print("💡 Setup required:")
-            print(f"   .env file: EX_ID_{ex_id}_KEY=your_api_key")
-            print(f"              EX_ID_{ex_id}_SECRET=your_secret")
-            print(
-                f"   Or Google Secrets: fullon-ex-{ex_id}-api-key, fullon-ex-{ex_id}-api-secret"
-            )
-            return
-
         # Create WebSocket handler through queue system
-        handler = await ExchangeQueue.get_websocket_handler(
-            exchange_obj, credential_provider
-        )
-
-        # Connect to exchange
-        await handler.connect()
+        # Handler is automatically connected and credentials are resolved internally
+        handler = await ExchangeQueue.get_websocket_handler(exchange_obj)
         print(f"✅ Connected to {exchange}")
 
         # Get available symbols (BTC/USD + 6 more)
@@ -409,9 +359,7 @@ async def test_websocket(exchange: str = "kraken", ex_id: int = 1):
         else:
             print("⚠️ No data received - check exchange connectivity")
 
-        # Disconnect
-        await handler.disconnect()
-        print(f"✅ Disconnected from {exchange}")
+        # Handler will be automatically disconnected by shutdown_factory()
 
     except Exception as e:
         print(f"❌ WebSocket test failed: {e}")

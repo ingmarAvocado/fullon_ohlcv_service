@@ -11,8 +11,20 @@ from fullon_ohlcv.repositories.ohlcv import TradeRepository
 ### Initialization
 - `TradeRepository(exchange, symbol, test=True)` - Create repository
 - `async with TradeRepository(...) as repo:` - Context manager (recommended)
-- `await repo.initialize()` - Manual initialization
+- `await repo.initialize()` - Initialize connection, schema, and TimescaleDB extension
+- `await repo.init_symbol(main="view")` - Create all database tables/views for symbol
 - `await repo.close()` - Manual cleanup
+
+**init_symbol() parameters**:
+- `main="view"` (default) - OHLCV alias points to continuous aggregate (fastest)
+- `main="candles"` - OHLCV alias points to candles table
+- `main="trades"` - OHLCV alias points to trades table
+
+**What init_symbol() creates**:
+1. `{symbol}_trades` - Raw trade data table (TimescaleDB hypertable)
+2. `{symbol}_candles1m` - 1-minute candles table (TimescaleDB hypertable)
+3. `{symbol}_candles1m_view` - Continuous aggregate materialized view
+4. `{symbol}_ohlcv` - Alias view pointing to main source
 
 ### Save Data
 - `await repo.save_trades(trades: List[Trade]) -> bool` - Save trade list
@@ -34,7 +46,8 @@ from fullon_ohlcv.repositories.ohlcv import CandleRepository
 ### Initialization
 - `CandleRepository(exchange, symbol, test=True)` - Create repository
 - `async with CandleRepository(...) as repo:` - Context manager (recommended)
-- `await repo.initialize()` - Manual initialization
+- `await repo.initialize()` - Initialize connection, schema, and TimescaleDB extension
+- `await repo.init_symbol(main="candles")` - Create all database tables/views for symbol (see TradeRepository for details)
 - `await repo.close()` - Manual cleanup
 
 ### Save Data  
@@ -54,7 +67,8 @@ import arrow
 ### Initialization
 - `TimeseriesRepository(exchange, symbol, test=True)` - Create repository
 - `async with TimeseriesRepository(...) as repo:` - Context manager (recommended)
-- `await repo.initialize()` - Manual initialization
+- `await repo.initialize()` - Initialize connection, schema, and TimescaleDB extension
+- `await repo.init_symbol(main="view")` - Create all database tables/views for symbol (see TradeRepository for details)
 - `await repo.close()` - Manual cleanup
 
 ### OHLCV Data Generation
@@ -107,6 +121,10 @@ Candle(
 ### Context Manager (Recommended)
 ```python
 async with TradeRepository("binance", "BTC/USDT", test=True) as repo:
+    # Initialize symbol tables first
+    await repo.init_symbol(main="view")
+
+    # Then save/query data
     success = await repo.save_trades(trades)
 ```
 
@@ -115,6 +133,10 @@ async with TradeRepository("binance", "BTC/USDT", test=True) as repo:
 repo = CandleRepository("binance", "ETH/USDT", test=True)
 await repo.initialize()
 try:
+    # Initialize symbol tables
+    await repo.init_symbol(main="candles")
+
+    # Then save/query data
     success = await repo.save_candles(candles)
 finally:
     await repo.close()
@@ -144,6 +166,10 @@ end_time = datetime.now(timezone.utc)
 start_time = end_time - timedelta(hours=24)
 
 async with TimeseriesRepository("binance", "BTC/USDT", test=True) as repo:
+    # Initialize symbol tables
+    await repo.init_symbol(main="view")
+
+    # Fetch OHLCV data
     ohlcv_data = await repo.fetch_ohlcv(
         compression=1,
         period="minutes",

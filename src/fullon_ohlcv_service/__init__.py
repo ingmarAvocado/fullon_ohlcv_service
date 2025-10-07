@@ -2,6 +2,6 @@
 
 __version__ = "0.1.0"
 
-from .ohlcv import OhlcvCollector, OhlcvManager
+from .ohlcv import HistoricOHLCVCollector, LiveOHLCVCollector
 
-__all__ = ['OhlcvCollector', 'OhlcvManager']
+__all__ = ['HistoricOHLCVCollector', 'LiveOHLCVCollector']

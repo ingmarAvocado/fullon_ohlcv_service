@@ -44,9 +44,10 @@ class TestDocumentationAccuracy:
         content = claude_md.read_text()
 
         # Check that key implementation files are mentioned
-        assert "ohlcv/collector.py" in content
-        assert "trade/collector.py" in content
-        assert "ohlcv/manager.py" in content
+        assert "ohlcv/live_collector.py" in content
+        assert "ohlcv/historic_collector.py" in content
+        assert "trade/live_collector.py" in content
+        assert "trade/historic_collector.py" in content
         assert "config/settings.py" in content
 
         # Verify line count documentation is reasonable
@@ -170,9 +171,10 @@ class TestImplementationStructure:
         base_path = Path(__file__).parent.parent / "src" / "fullon_ohlcv_service"
 
         expected_modules = [
-            "ohlcv/collector.py",
-            "ohlcv/manager.py",
-            "trade/collector.py",
+            "ohlcv/live_collector.py",
+            "ohlcv/historic_collector.py",
+            "trade/live_collector.py",
+            "trade/historic_collector.py",
             "config/settings.py"
         ]
 

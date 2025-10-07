@@ -21,6 +21,29 @@ from fullon_orm.models import Symbol, Exchange
 logger = get_component_logger("fullon.trade.historic")
 
 
+def _format_time_remaining(seconds: float) -> str:
+    """
+    Format time remaining in human-readable format.
+
+    Args:
+        seconds: Time remaining in seconds
+
+    Returns:
+        Formatted string like "111597 seconds (1.3 days)"
+    """
+    if seconds >= 86400:  # >= 1 day
+        days = seconds / 86400
+        return f"{seconds:.0f} seconds ({days:.1f} days)"
+    elif seconds >= 3600:  # >= 1 hour
+        hours = seconds / 3600
+        return f"{seconds:.0f} seconds ({hours:.1f} hours)"
+    elif seconds >= 60:  # >= 1 minute
+        minutes = seconds / 60
+        return f"{seconds:.0f} seconds ({minutes:.1f} minutes)"
+    else:
+        return f"{seconds:.0f} seconds"
+
+
 class HistoricTradeCollector:
     """
     Clean historical trade collector following live_collector.py patterns.
@@ -154,8 +177,20 @@ class HistoricTradeCollector:
             )
             return results
 
-        # Note: Trade collection proceeds regardless of OHLCV capabilities
-        # (OHLCV capability checks are for OHLCV collection, not trade collection)
+        # Check if this exchange needs trade collection for OHLCV
+        if not handler.needs_trades_for_ohlcv():
+            logger.info(
+                "Exchange has native OHLCV support - skipping trade collection",
+                exchange=exchange_name,
+                symbol_count=len(symbols)
+            )
+            return results
+
+        logger.info(
+            "Exchange requires trade collection for OHLCV",
+            exchange=exchange_name,
+            symbol_count=len(symbols)
+        )
 
         # Collect for all symbols in parallel
         symbol_tasks = []
@@ -248,7 +283,7 @@ class HistoricTradeCollector:
                     logger.info(
                         f"Retrieved {len(batch_trades)} trades for {symbol_str}:{exchange_name} "
                         f"from {from_time} to {to_time}. "
-                        f"{time_remaining_sec:.0f}s left till present time"
+                        f"{_format_time_remaining(time_remaining_sec)} left"
                     )
 
                     since_timestamp = int((last_timestamp_sec + 1) * 1000)
