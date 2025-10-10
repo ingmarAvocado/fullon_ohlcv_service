@@ -8,7 +8,7 @@ and stores it in the database using symbol backtest periods.
 
 import asyncio
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
@@ -137,6 +137,19 @@ class HistoricOHLCVCollector:
 
             logger.info(f"Loaded {len(all_symbols)} symbols from database")
 
+            # Initialize OHLCV symbols for this collector
+            if all_symbols:
+                try:
+                    from fullon_ohlcv_service.utils.add_symbols import add_all_symbols
+
+                    success = await add_all_symbols(symbols=all_symbols, main="candles", test=False)
+                    if success:
+                        logger.info(f"Initialized {len(all_symbols)} OHLCV symbols")
+                    else:
+                        logger.warning("Some OHLCV symbols failed to initialize")
+                except Exception as e:
+                    logger.error(f"OHLCV symbol initialization failed: {e}")
+
             # Group symbols by exchange
             symbols_by_exchange = {}
             for symbol in all_symbols:
@@ -182,14 +195,14 @@ class HistoricOHLCVCollector:
             logger.info(
                 "Exchange requires trade collection instead of OHLCV - skipping OHLCV collection",
                 exchange=exchange_name,
-                symbol_count=len(symbols)
+                symbol_count=len(symbols),
             )
             return results
 
         logger.info(
             "Exchange supports native OHLCV - proceeding with collection",
             exchange=exchange_name,
-            symbol_count=len(symbols)
+            symbol_count=len(symbols),
         )
 
         # Collect for all symbols in parallel
@@ -227,9 +240,9 @@ class HistoricOHLCVCollector:
 
         # Calculate time range
         start_timestamp = int(
-            (datetime.now(UTC) - timedelta(days=symbol.backtest)).timestamp() * 1000
+            (datetime.now(timezone.utc) - timedelta(days=symbol.backtest)).timestamp() * 1000
         )
-        current_timestamp = int(datetime.now(UTC).timestamp() * 1000)
+        current_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
 
         total_candles = 0
         since_timestamp = start_timestamp
@@ -251,6 +264,24 @@ class HistoricOHLCVCollector:
                 # Filter out None values that may be returned by the API
                 batch_candles = [c for c in batch_candles if c is not None]
 
+                # Drop incomplete current candle if present
+                if batch_candles:
+                    current_minute = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+                    last_candle = batch_candles[-1]
+                    if isinstance(last_candle, list) and len(last_candle) >= 6:
+                        ts = last_candle[0]
+                        candle_dt = datetime.fromtimestamp(
+                            ts / 1000 if ts > 1e12 else ts, tz=timezone.utc
+                        ).replace(second=0, microsecond=0)
+                        # Drop if it's the current minute and volume is 0 (incomplete)
+                        if candle_dt == current_minute and last_candle[5] == 0:
+                            batch_candles = batch_candles[:-1]
+                            logger.debug(
+                                "Dropped incomplete current candle",
+                                symbol=f"{exchange_name}:{symbol_str}",
+                                timestamp=candle_dt,
+                            )
+
                 if not batch_candles:
                     logger.debug(
                         "No more candles available", symbol=f"{exchange_name}:{symbol_str}"
@@ -259,10 +290,11 @@ class HistoricOHLCVCollector:
 
                 # Convert and save batch
                 candles = self._convert_to_candle_objects(batch_candles)
-                async with CandleRepository(exchange_name, symbol_str, test=False) as repo:
-                    success = await repo.save_candles(candles)
-                    if success:
-                        total_candles += len(candles)
+                if candles:
+                    async with CandleRepository(exchange_name, symbol_str) as repo:
+                        success = await repo.save_candles(candles)
+                        if success:
+                            total_candles += len(candles)
 
                 # Advance timestamp
                 if batch_candles:
@@ -278,10 +310,10 @@ class HistoricOHLCVCollector:
                     time_remaining_sec = current_time_sec - last_timestamp_sec
 
                     # Log progress with time range
-                    from_time = datetime.fromtimestamp(since_timestamp / 1000, tz=UTC).strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    to_time = datetime.fromtimestamp(last_timestamp_sec, tz=UTC).strftime(
+                    from_time = datetime.fromtimestamp(
+                        since_timestamp / 1000, tz=timezone.utc
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                    to_time = datetime.fromtimestamp(last_timestamp_sec, tz=timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"
                     )
 
@@ -351,9 +383,14 @@ class HistoricOHLCVCollector:
                     close = getattr(raw_candle, "close", 0.0)
                     volume = getattr(raw_candle, "volume", 0.0)
 
+                # Skip candles with None values
+                if any(x is None for x in [timestamp, open_price, high, low, close, volume]):
+                    logger.warning("Skipping candle with None values", raw_candle=raw_candle)
+                    continue
+
                 # Convert timestamp to datetime
                 timestamp_dt = datetime.fromtimestamp(
-                    timestamp / 1000 if timestamp > 1e12 else timestamp, tz=UTC
+                    timestamp / 1000 if timestamp > 1e12 else timestamp, tz=timezone.utc
                 )
 
                 candle_objects.append(

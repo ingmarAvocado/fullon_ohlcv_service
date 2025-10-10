@@ -17,6 +17,8 @@ from fullon_ohlcv.models import Trade
 from fullon_ohlcv.repositories.ohlcv import TradeRepository
 from fullon_orm import DatabaseContext
 from fullon_orm.models import Symbol, Exchange
+from fullon_ohlcv_service.utils.add_symbols import add_all_symbols
+
 
 logger = get_component_logger("fullon.trade.historic")
 
@@ -136,6 +138,21 @@ class HistoricTradeCollector:
 
             logger.info(f"Loaded {len(all_symbols)} symbols from database")
 
+            # Initialize OHLCV symbols for this collector
+            if all_symbols:
+                try:
+                    success = await add_all_symbols(
+                        symbols=all_symbols,
+                        main="view",
+                        test=False
+                    )
+                    if success:
+                        logger.info(f"Initialized {len(all_symbols)} OHLCV symbols")
+                    else:
+                        logger.warning("Some OHLCV symbols failed to initialize")
+                except Exception as e:
+                    logger.error(f"OHLCV symbol initialization failed: {e}")
+
             # Group symbols by exchange
             symbols_by_exchange = {}
             for symbol in all_symbols:
@@ -178,7 +195,13 @@ class HistoricTradeCollector:
             return results
 
         # Check if this exchange needs trade collection for OHLCV
-        if not handler.needs_trades_for_ohlcv():
+        try:
+            needs_trades = handler.needs_trades_for_ohlcv()
+        except AttributeError:
+            # Handler doesn't have capability methods - assume it needs trades
+            needs_trades = True
+
+        if not needs_trades:
             logger.info(
                 "Exchange has native OHLCV support - skipping trade collection",
                 exchange=exchange_name,

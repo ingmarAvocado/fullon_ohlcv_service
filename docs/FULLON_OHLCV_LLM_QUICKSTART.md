@@ -8,8 +8,20 @@ Quick guide for LLMs to use this PostgreSQL/TimescaleDB library for trading data
 poetry add git+ssh://git@github.com/ingmarAvocado/fullon_ohlcv.git
 ```
 
-## ⚙️ Database Initialization
+## ⚙️ Database Setup
 
+### Install Database
+First, create and setup a PostgreSQL database with TimescaleDB:
+
+```bash
+# Create database with TimescaleDB
+python src/fullon_ohlcv/install_ohlcv.py my_database_name
+
+# Or delete a database
+python src/fullon_ohlcv/install_ohlcv.py --delete my_database_name
+```
+
+### Initialize Symbol Tables
 **Important**: Before saving data, you must initialize symbol tables using `init_symbol()`:
 
 ```python
@@ -19,7 +31,7 @@ async with TradeRepository("binance", "BTC/USDT", test=True) as repo:
     # 2. {symbol}_candles1m - Pre-computed candles table
     # 3. {symbol}_candles1m_view - Continuous aggregate view
     # 4. {symbol}_ohlcv - Alias view (points to main source)
-    await repo.init_symbol(main="view")  # main: "view", "candles", or "trades"
+    await repo.init_symbol()
 ```
 
 **What `init_symbol()` creates**:
@@ -47,7 +59,7 @@ async def main():
     # Initialize with test=True for testing
     async with TradeRepository("binance", "BTC/USDT", test=True) as repo:
         # Initialize symbol tables
-        await repo.init_symbol(main="view")
+        await repo.init_symbol()
 
         # Create trades
         trades = [
@@ -94,7 +106,7 @@ async def main():
     # Use context manager (recommended)
     async with CandleRepository("binance", "ETH/USDT", test=True) as repo:
         # Initialize symbol tables
-        await repo.init_symbol(main="candles")
+        await repo.init_symbol()
 
         # Create candles
         base_time = datetime.now(timezone.utc)
@@ -143,7 +155,7 @@ from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 async def main():
     async with TimeseriesRepository("binance", "BTC/USDT", test=True) as repo:
         # Initialize symbol tables
-        await repo.init_symbol(main="view")
+        await repo.init_symbol()
 
         # Generate OHLCV candles from existing trade data
         end_time = datetime.now(timezone.utc)
@@ -166,7 +178,7 @@ if __name__ == "__main__":
 
 ## 🔑 Key Points
 
-1. **Initialize symbols first** - Call `await repo.init_symbol(main="view")` after repo initialization
+1. **Initialize symbols first** - Call `await repo.init_symbol()` after repo initialization
 2. **Always async** - Use `async`/`await` for all operations
 3. **Use context managers** - `async with Repository(...) as repo:` (recommended) or manual `await repo.initialize()` + `await repo.close()`
 4. **UTC timestamps** - Always use `datetime.now(timezone.utc)`
@@ -175,7 +187,7 @@ if __name__ == "__main__":
 
 ## 📊 What Gets Created
 
-When you call `init_symbol(main="view")` for `TradeRepository("binance", "BTC/USDT")`:
+When you call `init_symbol()` for `TradeRepository("binance", "BTC/USDT")`:
 - **Schema**: `binance`
 - **Tables/Views**:
   - `binance.btc_usdt_trades` - Raw trade data (TimescaleDB hypertable)
@@ -185,11 +197,11 @@ When you call `init_symbol(main="view")` for `TradeRepository("binance", "BTC/US
 
 ## 🔗 Quick References
 
-- **Method Reference**: `docs/METHOD_REFERENCE.md` - All available methods
-- **Examples**: 
-  - `src/fullon_ohlcv/examples/trade_repository_example.py`
-  - `src/fullon_ohlcv/examples/candle_repository_example.py`  
-  - `src/fullon_ohlcv/examples/timeseries_repository_example.py`
-  - `src/fullon_ohlcv/examples/run_all.py` - Run all examples at once
+- **Method Reference**: `docs/FULLON_OHLCV_METHOD_REFERENCE.md` - All available methods
+- **Examples**:
+  - `examples/trade_repository_example.py`
+  - `examples/candle_repository_example.py`
+  - `examples/timeseries_repository_example.py`
+  - `examples/run_all.py` - Run all examples at once
 
 That's it! Check METHOD_REFERENCE.md for all methods, use examples as templates.

@@ -87,7 +87,6 @@ fullon_ohlcv_service/
 │   │   └── manager.py      # OhlcvManager - Coordinate multiple collectors (~138 lines)
 │   ├── trade/
 │   │   ├── collector.py    # TradeCollector - WebSocket trade streaming (~427 lines)
-│   │   └── manager.py      # TradeManager - Coordinate trade collectors (~242 lines)
 │   ├── config/
 │   │   ├── settings.py     # Configuration management (~33 lines)
 │   │   └── database_config.py # Database-driven configuration (~95 lines)
@@ -240,11 +239,10 @@ LOG_LEVEL=INFO
 1. **OhlcvCollector** (`ohlcv/collector.py`): REST-based OHLCV collection using fullon_exchange
 2. **TradeCollector** (`trade/collector.py`): WebSocket trade streaming with fullon_exchange
 3. **OhlcvManager** (`ohlcv/manager.py`): Coordinates multiple OHLCV collectors
-4. **TradeManager** (`trade/manager.py`): Manages trade collectors with health monitoring
-5. **DatabaseConfig** (`config/database_config.py`): Database-driven configuration via fullon_orm
-6. **Settings** (`config/settings.py`): Environment configuration management
-7. **ProcessCache** (`utils/process_cache.py`): Health monitoring integration
-8. **Daemon** (`daemon.py`): Main service orchestration with signal handling
+4. **DatabaseConfig** (`config/database_config.py`): Database-driven configuration via fullon_orm
+5. **Settings** (`config/settings.py`): Environment configuration management
+6. **ProcessCache** (`utils/process_cache.py`): Health monitoring integration
+7. **Daemon** (`daemon.py`): Main service orchestration with signal handling
 
 ### Current Capabilities:
 

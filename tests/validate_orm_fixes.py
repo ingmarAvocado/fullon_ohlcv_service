@@ -12,38 +12,38 @@ from pathlib import Path
 
 def check_file_for_patterns(file_path, issues):
     """Check a file for ORM compatibility issues."""
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         content = f.read()
         lines = content.splitlines()
 
     filename = file_path.name
 
     # Check for correct imports
-    if 'from fullon_orm' in content:
-        if 'from fullon_orm.models import' in content:
+    if "from fullon_orm" in content:
+        if "from fullon_orm.models import" in content:
             # Good - using model imports
             pass
 
     # Check for Trade volume field usage
     for i, line in enumerate(lines, 1):
         # Check if we're creating Trade objects with correct field
-        if 'Trade(' in line:
+        if "Trade(" in line:
             # Look for the volume field in the next few lines
-            context = '\n'.join(lines[max(0, i-1):min(len(lines), i+10)])
-            if 'volume=' in context:
+            context = "\n".join(lines[max(0, i - 1) : min(len(lines), i + 10)])
+            if "volume=" in context:
                 # Good - using volume field
                 pass
-            elif 'amount=' in context and 'Trade' in context:
+            elif "amount=" in context and "Trade" in context:
                 issues.append(f"{filename}:{i} - Trade object using 'amount' instead of 'volume'")
 
     # Check for correct mapping of raw trade data
     for i, line in enumerate(lines, 1):
         if '.get("amount"' in line or ".get('amount'" in line:
             # Check if it's being mapped to volume
-            if 'volume=' in line or 'volume:' in line:
+            if "volume=" in line or "volume:" in line:
                 # Good - mapping amount to volume
                 pass
-            elif 'Trade(' in lines[max(0, i-5):min(len(lines), i+5)].__str__():
+            elif "Trade(" in lines[max(0, i - 5) : min(len(lines), i + 5)].__str__():
                 # Check context to see if it's part of Trade creation
                 pass
 
@@ -54,8 +54,8 @@ def validate_database_config():
     """Validate database_config.py has correct patterns."""
     print("\n1. Validating database_config.py...")
 
-    config_file = Path('src/fullon_ohlcv_service/config/database_config.py')
-    with open(config_file, 'r') as f:
+    config_file = Path("src/fullon_ohlcv_service/config/database_config.py")
+    with open(config_file, "r") as f:
         content = f.read()
 
     issues = []
@@ -80,10 +80,10 @@ def validate_trade_collectors():
     print("\n2. Validating trade collectors...")
 
     collector_files = [
-        Path('src/fullon_ohlcv_service/trade/collector.py'),
-        Path('src/fullon_ohlcv_service/trade/historic_collector.py'),
-        Path('src/fullon_ohlcv_service/trade/live_collector.py'),
-        Path('src/fullon_ohlcv_service/trade/global_batcher.py'),
+        Path("src/fullon_ohlcv_service/trade/collector.py"),
+        Path("src/fullon_ohlcv_service/trade/historic_collector.py"),
+        Path("src/fullon_ohlcv_service/trade/live_collector.py"),
+        Path("src/fullon_ohlcv_service/trade/global_batcher.py"),
     ]
 
     issues = []
@@ -92,13 +92,13 @@ def validate_trade_collectors():
             check_file_for_patterns(file_path, issues)
 
     # Check specific patterns
-    with open(Path('src/fullon_ohlcv_service/trade/collector.py'), 'r') as f:
+    with open(Path("src/fullon_ohlcv_service/trade/collector.py"), "r") as f:
         content = f.read()
         # Check for volume field mapping
         if 't.get("amount", t.get("volume"' in content:
             print("   ✅ collector.py handles both 'amount' and 'volume' fields")
 
-    with open(Path('src/fullon_ohlcv_service/trade/historic_collector.py'), 'r') as f:
+    with open(Path("src/fullon_ohlcv_service/trade/historic_collector.py"), "r") as f:
         content = f.read()
         if "volume=float(amount)" in content:
             print("   ✅ historic_collector.py maps 'amount' to 'volume'")
@@ -111,17 +111,16 @@ def validate_exchange_lookups():
     print("\n3. Validating exchange lookups...")
 
     files_to_check = [
-        Path('src/fullon_ohlcv_service/trade/historic_collector.py'),
-        Path('src/fullon_ohlcv_service/trade/live_collector.py'),
-        Path('src/fullon_ohlcv_service/trade/manager.py'),
-        Path('src/fullon_ohlcv_service/ohlcv/historic_collector.py'),
-        Path('src/fullon_ohlcv_service/ohlcv/live_collector.py'),
+        Path("src/fullon_ohlcv_service/trade/historic_collector.py"),
+        Path("src/fullon_ohlcv_service/trade/live_collector.py"),
+        Path("src/fullon_ohlcv_service/ohlcv/historic_collector.py"),
+        Path("src/fullon_ohlcv_service/ohlcv/live_collector.py"),
     ]
 
     correct_patterns = 0
     for file_path in files_to_check:
         if file_path.exists():
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 content = f.read()
                 # Check for correct dictionary access pattern
                 if "exchange.get('cat_ex_id')" in content or 'exchange.get("cat_ex_id")' in content:
@@ -140,20 +139,20 @@ def validate_imports():
     print("\n4. Validating ORM model imports...")
 
     files_to_check = [
-        ('src/fullon_ohlcv_service/trade/historic_collector.py', ['Symbol', 'Exchange']),
-        ('src/fullon_ohlcv_service/trade/live_collector.py', ['Symbol', 'Exchange']),
-        ('src/fullon_ohlcv_service/ohlcv/historic_collector.py', ['Symbol', 'Exchange']),
-        ('src/fullon_ohlcv_service/ohlcv/live_collector.py', ['Symbol', 'Exchange']),
+        ("src/fullon_ohlcv_service/trade/historic_collector.py", ["Symbol", "Exchange"]),
+        ("src/fullon_ohlcv_service/trade/live_collector.py", ["Symbol", "Exchange"]),
+        ("src/fullon_ohlcv_service/ohlcv/historic_collector.py", ["Symbol", "Exchange"]),
+        ("src/fullon_ohlcv_service/ohlcv/live_collector.py", ["Symbol", "Exchange"]),
     ]
 
     all_good = True
     for file_path, required_models in files_to_check:
         path = Path(file_path)
         if path.exists():
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 content = f.read()
                 for model in required_models:
-                    if f'from fullon_orm.models import' in content and model in content:
+                    if f"from fullon_orm.models import" in content and model in content:
                         pass  # Good
                     else:
                         print(f"   ⚠️  {path.name} may be missing import for {model}")
@@ -167,9 +166,9 @@ def validate_imports():
 
 def main():
     """Run all validations."""
-    print("="*60)
+    print("=" * 60)
     print("ORM Compatibility Validation")
-    print("="*60)
+    print("=" * 60)
 
     all_valid = True
 
@@ -178,7 +177,7 @@ def main():
     all_valid &= validate_exchange_lookups()
     all_valid &= validate_imports()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     if all_valid:
         print("✅ All ORM compatibility fixes are in place!")
         print("\nSummary of fixes:")
@@ -189,7 +188,7 @@ def main():
         print("- All necessary ORM model imports are present")
     else:
         print("❌ Some validation checks failed")
-    print("="*60)
+    print("=" * 60)
 
     return all_valid
 

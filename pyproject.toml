@@ -1,6 +1,6 @@
 [project]
 name = "fullon-ohlcv-service"
-version = "0.3.1"
+version = "0.3.2"
 description = "Async daemon service for collecting OHLCV candles and trade data from cryptocurrency exchanges"
 authors = [
     {name = "ingmar", email = "ingmar@avocadoblock.com"}
@@ -12,8 +12,11 @@ dependencies = [
     "arrow>=1.3.0",
     "click>=8.1.0",
     "python-dotenv>=1.0.0",
-    "fullon-ohlcv @ git+ssh://git@github.com/ingmarAvocado/fullon_ohlcv.git@main",
     "fullon-exchange @ git+ssh://git@github.com/ingmarAvocado/fullon_exchange.git@main",
+    "fullon-ohlcv @ git+ssh://git@github.com/ingmarAvocado/fullon_ohlcv.git@main",
+    "fullon-orm @ git+ssh://git@github.com/ingmarAvocado/fullon_orm.git@main",
+    "fullon-cache @ git+ssh://git@github.com/ingmarAvocado/fullon_cache.git@main",
+    "fullon-log @ git+ssh://git@github.com/ingmarAvocado/fullon_log.git@main",
 ]
 
 [project.optional-dependencies]

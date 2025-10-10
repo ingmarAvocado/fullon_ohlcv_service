@@ -69,7 +69,6 @@ The service consists of:
 - **OhlcvCollector**: REST-based OHLCV data collection
 - **TradeCollector**: WebSocket-based real-time trade streaming
 - **OhlcvManager**: Coordinates multiple OHLCV collectors
-- **TradeManager**: Manages trade collectors with health monitoring
 - **DatabaseConfig**: Fetches configuration from fullon_orm
 - **Daemon**: Main service orchestration
 

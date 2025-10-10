@@ -7,8 +7,9 @@ Implements clean fullon ecosystem integration patterns.
 
 import asyncio
 import os
-from datetime import UTC, datetime
+from typing import Optional
 
+import arrow
 from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
 from fullon_ohlcv.models import Candle
@@ -70,8 +71,12 @@ class LiveOHLCVCollector:
                 await asyncio.sleep(30)
                 # Check all handlers are still connected
                 for exchange_name, handler in self.websocket_handlers.items():
-                    if not handler.connected:
-                        logger.warning("WebSocket disconnected", exchange=exchange_name)
+                    try:
+                        if not handler.connected:
+                            logger.warning("WebSocket disconnected", exchange=exchange_name)
+                    except AttributeError:
+                        # Handler may not have 'connected' attribute
+                        pass
 
         except Exception as e:
             logger.error("Error in live collection startup", error=str(e))
@@ -101,6 +106,19 @@ class LiveOHLCVCollector:
             admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
 
             logger.info(f"Loaded {len(all_symbols)} symbols from database")
+
+            # Initialize OHLCV symbols for this collector
+            if all_symbols:
+                try:
+                    from fullon_ohlcv_service.utils.add_symbols import add_all_symbols
+
+                    success = await add_all_symbols(symbols=all_symbols, main="candles", test=False)
+                    if success:
+                        logger.info(f"Initialized {len(all_symbols)} OHLCV symbols")
+                    else:
+                        logger.warning("Some OHLCV symbols failed to initialize")
+                except Exception as e:
+                    logger.error(f"OHLCV symbol initialization failed: {e}")
 
             # Group symbols by exchange
             symbols_by_exchange = {}
@@ -132,18 +150,22 @@ class LiveOHLCVCollector:
             logger.debug("WebSocket handler obtained", exchange=exchange_name)
 
             # Check if this exchange needs trade collection instead of OHLCV
-            if handler.needs_trades_for_ohlcv():
-                logger.info(
-                    "Exchange requires trade collection instead of OHLCV - skipping OHLCV subscription",
-                    exchange=exchange_name,
-                    symbol_count=len(symbols)
-                )
-                return
+            try:
+                if handler.needs_trades_for_ohlcv():
+                    logger.info(
+                        "Exchange requires trade collection instead of OHLCV - skipping OHLCV subscription",
+                        exchange=exchange_name,
+                        symbol_count=len(symbols),
+                    )
+                    return
+            except AttributeError:
+                # WebSocket handler doesn't have this method, assume supports OHLCV
+                pass
 
             logger.info(
                 "Exchange supports native OHLCV - proceeding with subscription",
                 exchange=exchange_name,
-                symbol_count=len(symbols)
+                symbol_count=len(symbols),
             )
 
             # Subscribe each symbol with its own callback
@@ -191,46 +213,18 @@ class LiveOHLCVCollector:
 
         async def ohlcv_callback(ohlcv_data) -> None:
             try:
-                # ohlcv_data can be:
-                # 1. List of lists: [[timestamp, o, h, l, c, v], ...]
-                # 2. Single list: [timestamp, o, h, l, c, v]
-                # 3. Object with attributes
-
-                # Handle list format (most common for OHLCV WebSocket)
-                if isinstance(ohlcv_data, list):
-                    # If it's a list of lists, take the first one
-                    if ohlcv_data and isinstance(ohlcv_data[0], list):
-                        candle_data = ohlcv_data[0]
-                    else:
-                        candle_data = ohlcv_data
-
-                    # Convert array format to Candle
-                    if len(candle_data) >= 6:
-                        timestamp_ms = candle_data[0]
-                        timestamp_dt = datetime.fromtimestamp(
-                            timestamp_ms / 1000 if timestamp_ms > 1e12 else timestamp_ms,
-                            tz=UTC
-                        )
-
-                        candle = Candle(
-                            timestamp=timestamp_dt,
-                            open=float(candle_data[1]),
-                            high=float(candle_data[2]),
-                            low=float(candle_data[3]),
-                            close=float(candle_data[4]),
-                            vol=float(candle_data[5])
-                        )
-                    else:
-                        logger.warning(
-                            "Invalid OHLCV array format",
-                            exchange=exchange_name,
-                            symbol=symbol_str,
-                            data=str(ohlcv_data)[:100]
-                        )
-                        return
-                else:
-                    # Handle object format
-                    candle = self._convert_to_candle(ohlcv_data)
+                candle_data = ohlcv_data[0] if isinstance(ohlcv_data[0], list) else ohlcv_data
+                ts, o, h, l, c, v = candle_data
+                ts_sec = ts / 1000 if ts > 1e12 else ts
+                timestamp = arrow.get(ts_sec)
+                candle = Candle(
+                    timestamp=timestamp.datetime,
+                    open=o,
+                    high=h,
+                    low=l,
+                    close=c,
+                    vol=v,
+                )
 
                 # Only save if this is a NEW candle (different minute)
                 symbol_key = f"{exchange_name}:{symbol_str}"
@@ -243,7 +237,7 @@ class LiveOHLCVCollector:
                         "Saved new candle",
                         exchange=exchange_name,
                         symbol=symbol_str,
-                        timestamp=candle.timestamp
+                        timestamp=candle.timestamp,
                     )
                 # else: Same minute - skip save (in-progress update)
 
@@ -252,47 +246,10 @@ class LiveOHLCVCollector:
                     "Error processing OHLCV",
                     exchange=exchange_name,
                     symbol=symbol_str,
-                    error=str(e)
+                    error=str(e),
                 )
 
         return ohlcv_callback
-
-    def _convert_to_candle(self, ohlcv_data) -> Candle:
-        """Convert raw OHLCV data to Candle object."""
-        # Handle both dict and object formats
-        if isinstance(ohlcv_data, dict):
-            timestamp = ohlcv_data.get("timestamp", ohlcv_data.get("datetime", 0))
-            open_price = ohlcv_data.get("open", 0.0)
-            high = ohlcv_data.get("high", 0.0)
-            low = ohlcv_data.get("low", 0.0)
-            close = ohlcv_data.get("close", 0.0)
-            volume = ohlcv_data.get("volume", 0.0)
-        else:
-            timestamp = getattr(ohlcv_data, "timestamp", getattr(ohlcv_data, "datetime", 0))
-            open_price = getattr(ohlcv_data, "open", 0.0)
-            high = getattr(ohlcv_data, "high", 0.0)
-            low = getattr(ohlcv_data, "low", 0.0)
-            close = getattr(ohlcv_data, "close", 0.0)
-            volume = getattr(ohlcv_data, "volume", 0.0)
-
-        # Convert timestamp to datetime if needed
-        from datetime import datetime
-
-        if isinstance(timestamp, int | float):
-            timestamp_dt = datetime.fromtimestamp(
-                timestamp / 1000 if timestamp > 1e12 else timestamp, tz=UTC
-            )
-        else:
-            timestamp_dt = timestamp
-
-        return Candle(
-            timestamp=timestamp_dt,
-            open=float(open_price),
-            high=float(high),
-            low=float(low),
-            close=float(close),
-            vol=float(volume),
-        )
 
     async def _cleanup(self) -> None:
         """Clean up WebSocket connections."""

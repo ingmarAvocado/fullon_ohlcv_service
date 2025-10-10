@@ -70,8 +70,12 @@ class LiveTradeCollector:
                 await asyncio.sleep(30)
                 # Check all handlers are still connected
                 for exchange_name, handler in self.websocket_handlers.items():
-                    if not handler.connected:
-                        logger.warning("WebSocket disconnected", exchange=exchange_name)
+                    try:
+                        if not handler.connected:
+                            logger.warning("WebSocket disconnected", exchange=exchange_name)
+                    except AttributeError:
+                        # Handler may not have 'connected' attribute
+                        pass
 
         except Exception as e:
             logger.error("Error in live collection startup", error=str(e))
@@ -108,6 +112,22 @@ class LiveTradeCollector:
             admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
 
             logger.info(f"Loaded {len(all_symbols)} symbols from database")
+
+            # Initialize OHLCV symbols for this collector
+            if all_symbols:
+                try:
+                    from fullon_ohlcv_service.utils.add_symbols import add_all_symbols
+                    success = await add_all_symbols(
+                        symbols=all_symbols,
+                        main="view",
+                        test=False
+                    )
+                    if success:
+                        logger.info(f"Initialized {len(all_symbols)} OHLCV symbols")
+                    else:
+                        logger.warning("Some OHLCV symbols failed to initialize")
+                except Exception as e:
+                    logger.error(f"OHLCV symbol initialization failed: {e}")
 
             # Group symbols by exchange
             symbols_by_exchange = {}

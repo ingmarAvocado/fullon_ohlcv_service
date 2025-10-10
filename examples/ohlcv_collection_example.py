@@ -8,15 +8,18 @@ Tests bulk collection for ALL configured symbols using test databases.
 Usage:
     python ohlcv_collection_example.py
 """
+
 import asyncio
 import os
 import sys
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # Load environment variables from .env file
 project_root = Path(__file__).parent.parent
 try:
     from dotenv import load_dotenv
+
     load_dotenv(project_root / ".env")
 except ImportError:
     print("⚠️  python-dotenv not available, make sure .env variables are set manually")
@@ -28,19 +31,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # CRITICAL: Set BOTH test database names FIRST, before ANY imports
 from demo_data import generate_test_db_name
+
 test_db_base = generate_test_db_name()
 test_db_orm = test_db_base
 test_db_ohlcv = f"{test_db_base}_ohlcv"
 
-os.environ['DB_NAME'] = test_db_orm
-os.environ['DB_OHLCV_NAME'] = test_db_ohlcv
+os.environ["DB_NAME"] = test_db_orm
+os.environ["DB_OHLCV_NAME"] = test_db_ohlcv
 
 # Now safe to import modules
-from demo_data import (
-    create_dual_test_databases,
-    drop_dual_test_databases,
-    install_demo_data
-)
+from demo_data import create_dual_test_databases, drop_dual_test_databases, install_demo_data
 from fullon_ohlcv_service.ohlcv.historic_collector import HistoricOHLCVCollector
 from fullon_ohlcv_service.ohlcv.live_collector import LiveOHLCVCollector
 from fullon_exchange.queue import ExchangeQueue
@@ -53,7 +53,7 @@ logger = get_component_logger("fullon.ohlcv.test")
 async def set_database():
     """Set up test databases for OHLCV collection."""
     print("\n🔍 Setting up test databases for ALL symbols")
-    print("="*50)
+    print("=" * 50)
 
     logger.debug("Creating dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
     orm_db_name, ohlcv_db_name = await create_dual_test_databases(test_db_base)
@@ -107,9 +107,16 @@ async def example_live_ohlcv():
         # We need to run it as a task and cancel after duration
         collection_task = asyncio.create_task(collector.start_collection())
 
-        # Run for 60 seconds
-        print("Collecting live OHLCV for 60 seconds...")
-        await asyncio.sleep(60)
+        # Run until end of next minute + 1 second
+        now = datetime.now(timezone.utc)
+        next_minute_end = (now + timedelta(minutes=1)).replace(second=0, microsecond=0) + timedelta(
+            seconds=1
+        )
+        sleep_duration = (next_minute_end - now).total_seconds()
+        print(
+            f"Collecting live OHLCV until {next_minute_end.strftime('%H:%M:%S')} UTC ({sleep_duration:.1f} seconds)..."
+        )
+        await asyncio.sleep(sleep_duration)
 
         # Stop streaming
         await collector.stop_collection()
@@ -138,6 +145,9 @@ async def check_fullon_content():
     try:
         print("\n📊 Checking OHLCV candle data for all collected symbols...")
 
+        # Initialize ExchangeQueue for handler checks
+        await ExchangeQueue.initialize_factory()
+
         # Load all symbols from database (same as historic collector)
         async with DatabaseContext() as db:
             all_symbols = await db.symbols.get_all()
@@ -156,6 +166,33 @@ async def check_fullon_content():
 
             print(f"\n🔍 Checking symbol: {symbol_key}")
 
+            # Check if this exchange supports native OHLCV
+            try:
+                # Create a simple exchange object for handler check
+                class SimpleExchange:
+                    def __init__(self, exchange_name: str):
+                        self.ex_id = f"{exchange_name}_check"
+                        self.uid = "check_account"
+                        self.test = False
+                        self.cat_exchange = type("CatExchange", (), {"name": exchange_name})()
+
+                exchange_obj = SimpleExchange(exchange_name)
+
+                # Public data doesn't need credentials
+                def credential_provider(exchange_obj):
+                    return "", ""
+
+                handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
+                if handler.needs_trades_for_ohlcv():
+                    print(f"   ⚠️  {symbol_key} uses trade-based OHLCV - skipping candle display")
+                    continue
+            except Exception as e:
+                print(f"   ❌ Error getting handler for {symbol_key}: {e}")
+                continue
+            except Exception as e:
+                print(f"   ❌ Error getting handler for {symbol_key}: {e}")
+                continue
+
             # Check recent 1-minute candles (last 15 minutes)
             from datetime import datetime, timezone, timedelta
             import arrow
@@ -170,7 +207,7 @@ async def check_fullon_content():
                         compression=1,
                         period="minutes",
                         fromdate=arrow.get(start_time),
-                        todate=arrow.get(end_time)
+                        todate=arrow.get(end_time),
                     )
 
                     if ohlcv_1m:
@@ -178,10 +215,19 @@ async def check_fullon_content():
                         recent_1m = ohlcv_1m[-10:] if len(ohlcv_1m) >= 10 else ohlcv_1m
                         print("   🕐 Last 10 1-minute candles:")
                         for ts, o, h, l, c, v in recent_1m:
-                            candle_time = arrow.get(ts).format('YYYY-MM-DD HH:mm:ss')
-                            print(f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}")
+                            if any(x is None for x in (o, h, l, c, v)):
+                                print(
+                                    f"   ⚠️  Invalid candle data (contains None): {ts}, {o}, {h}, {l}, {c}, {v}"
+                                )
+                                continue
+                            candle_time = arrow.get(ts).format("YYYY-MM-DD HH:mm:ss")
+                            print(
+                                f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}"
+                            )
 
-                        print(f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})")
+                        print(
+                            f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})"
+                        )
                         total_candles_found += len(ohlcv_1m)
                     else:
                         print("   ⚠️  No 1-minute candles found")
@@ -192,7 +238,12 @@ async def check_fullon_content():
                 print(f"   ❌ Error checking {symbol_key}: {symbol_error}")
                 continue
 
-        print(f"\n✅ OHLCV verification complete: checked {total_symbols_checked} symbols, found {total_candles_found} total candles")
+        print(
+            f"\n✅ OHLCV verification complete: checked {total_symbols_checked} symbols, found {total_candles_found} total candles"
+        )
+
+        # Clean up ExchangeQueue
+        await ExchangeQueue.shutdown_factory()
 
     except Exception as e:
         print(f"❌ OHLCV check failed: {e}")
@@ -222,13 +273,15 @@ async def main():
         finally:
             # Clean up test databases
             try:
-                logger.debug("Dropping dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
+                logger.debug(
+                    "Dropping dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv
+                )
                 await drop_dual_test_databases(test_db_orm, test_db_ohlcv)
                 logger.debug("Test databases cleaned up successfully")
             except Exception as db_cleanup_error:
                 logger.warning("Error during database cleanup", error=str(db_cleanup_error))
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("✅ OHLCV TWO-PHASE COLLECTION TEST COMPLETED")
         print("📋 Summary:")
         print("  ✅ Historical pagination logic implemented")
