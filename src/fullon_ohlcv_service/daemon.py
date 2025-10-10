@@ -1,63 +1,76 @@
-#!/usr/bin/env python3
 """
 OHLCV Service Daemon
 
-Main entry point for the fullon_ohlcv_service CLI daemon.
-Coordinates OHLCV and Trade collection services using the fullon ecosystem.
+Simple library for coordinating OHLCV and Trade collection services.
+Used by parent daemon for process lifecycle management.
 """
 
 import asyncio
-import argparse
-import signal
-import sys
 import os
-import json
-from pathlib import Path
-from typing import Optional
 
-from fullon_log import get_component_logger
 from fullon_cache import ProcessCache
-from fullon_ohlcv_service.ohlcv.live_collector import LiveOHLCVCollector
-from fullon_ohlcv_service.ohlcv.historic_collector import HistoricOHLCVCollector
-from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
-from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
+from fullon_cache.process_cache import ProcessStatus, ProcessType
+from fullon_log import get_component_logger
+from fullon_orm import DatabaseContext
+
 from fullon_ohlcv_service.config.settings import OhlcvServiceConfig
+from fullon_ohlcv_service.ohlcv.historic_collector import HistoricOHLCVCollector
+from fullon_ohlcv_service.ohlcv.live_collector import LiveOHLCVCollector
+from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
+from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+from fullon_ohlcv_service.utils.add_symbols import add_all_symbols
 
 
 class OhlcvServiceDaemon:
-    """Main daemon coordinator for OHLCV and Trade services"""
+    """Simple daemon coordinator for OHLCV and Trade services"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = get_component_logger("fullon.ohlcv.daemon")
         self.config = OhlcvServiceConfig.from_env()
-        self.live_ohlcv_collector: Optional[LiveOHLCVCollector] = None
-        self.historic_ohlcv_collector: Optional[HistoricOHLCVCollector] = None
-        self.live_trade_collector: Optional[LiveTradeCollector] = None
-        self.historic_trade_collector: Optional[HistoricTradeCollector] = None
-        self.running = False
-        self.pid_file = Path("/tmp/fullon_ohlcv_service.pid")
+        self.live_ohlcv_collector: LiveOHLCVCollector | None = None
+        self.historic_ohlcv_collector: HistoricOHLCVCollector | None = None
+        self.live_trade_collector: LiveTradeCollector | None = None
+        self.historic_trade_collector: HistoricTradeCollector | None = None
+        self.process_id: str | None = None
 
-        # Setup signal handlers
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+    async def _register_daemon(self) -> None:
+        """Register daemon in ProcessCache for health monitoring"""
+        async with ProcessCache() as cache:
+            self.process_id = await cache.register_process(
+                process_type=ProcessType.OHLCV,
+                component="ohlcv_daemon",
+                params={"pid": os.getpid(), "args": ["ohlcv_daemon"]},
+                message="Started",
+                status=ProcessStatus.STARTING,
+            )
 
-    def _signal_handler(self, signum, frame):
-        """Handle shutdown signals gracefully"""
-        self.logger.info(f"Received signal {signum}, initiating shutdown...")
-        if self.running:
-            asyncio.create_task(self.stop())
-
-    async def start(self) -> bool:
-        """Start the OHLCV service daemon"""
-        if self.running:
-            self.logger.warning("Daemon already running")
-            return False
-
+    async def run(self) -> None:
+        """Main entry point - runs historic then live phases"""
         try:
             self.logger.info("Starting OHLCV Service Daemon")
 
-            # Create PID file
-            self._create_pid_file()
+            # Load and initialize all symbols before starting collectors
+            # This prevents conflicts when collectors run concurrently
+            async with DatabaseContext() as db:
+                all_symbols = await db.symbols.get_all()
+
+            if all_symbols:
+                self.logger.info(
+                    f"Initializing {len(all_symbols)} symbols for OHLCV and trade operations"
+                )
+
+                # Initialize symbols for both OHLCV (candles) and trade (view) operations
+                candles_success = await add_all_symbols(
+                    symbols=all_symbols, main="candles", test=False
+                )
+                view_success = await add_all_symbols(symbols=all_symbols, main="view", test=False)
+
+                if candles_success and view_success:
+                    self.logger.info("All symbols initialized successfully")
+                else:
+                    self.logger.warning("Some symbol initialization failed, but continuing")
+            else:
+                self.logger.warning("No symbols found in database")
 
             # Initialize collectors
             self.live_ohlcv_collector = LiveOHLCVCollector()
@@ -65,295 +78,101 @@ class OhlcvServiceDaemon:
             self.live_trade_collector = LiveTradeCollector()
             self.historic_trade_collector = HistoricTradeCollector()
 
-            # Register main daemon process
-            # await self._register_daemon()  # Temporarily disabled until ProcessCache API is clarified
+            # Register with ProcessCache for health monitoring
+            await self._register_daemon()
 
-            # Start services
-            ohlcv_results = {}
-            trade_results = {}
-
-            if self.config.enable_streaming:
-                self.logger.info("Starting Live OHLCV Collector...")
-                await self.live_ohlcv_collector.start_collection()
-
-                self.logger.info("Starting Live Trade Collector...")
-                await self.live_trade_collector.start_collection()
-
+            # Phase 1: Historical collection (concurrent)
             if self.config.enable_historical:
-                self.logger.info("Starting Historic OHLCV Collector...")
-                ohlcv_results = await self.historic_ohlcv_collector.start_collection()
+                self.logger.info("Starting Historic Collectors (concurrent)...")
 
-                self.logger.info("Starting Historic Trade Collector...")
-                trade_results = await self.historic_trade_collector.start_collection()
-
-            self.running = True
-
-            # Get status for startup summary
-            ohlcv_count = len(ohlcv_results)
-            trade_count = len(trade_results)
-
-            self.logger.info("OHLCV Service Daemon started successfully",
-                           ohlcv_symbols=ohlcv_count,
-                           trade_symbols=trade_count)
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to start daemon: {e}")
-            await self.cleanup()
-            return False
-
-    async def stop(self) -> bool:
-        """Stop the OHLCV service daemon"""
-        if not self.running:
-            self.logger.warning("Daemon not running")
-            return False
-
-        try:
-            self.logger.info("Stopping OHLCV Service Daemon")
-            self.running = False
-
-            # Stop services
-            if self.live_trade_collector:
-                self.logger.info("Stopping Live Trade Collector...")
-                await self.live_trade_collector.stop_collection()
-
-            if self.live_ohlcv_collector:
-                self.logger.info("Stopping Live OHLCV Collector...")
-                await self.live_ohlcv_collector.stop_collection()
-
-            # Cleanup
-            await self.cleanup()
-
-            self.logger.info("OHLCV Service Daemon stopped successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error during daemon shutdown: {e}")
-            return False
-
-    async def status(self) -> dict:
-        """Get daemon status"""
-        status = {
-            "daemon_running": self.running,
-            "pid": os.getpid(),
-            "config": {
-                "user_id": self.config.user_id,
-                "collection_interval": self.config.collection_interval,
-                "health_update_interval": self.config.health_update_interval,
-                "enable_streaming": self.config.enable_streaming,
-                "enable_historical": self.config.enable_historical
-            },
-            "ohlcv_service": {},
-            "trade_service": {}
-        }
-
-        # Collectors don't have status methods, just report if they're initialized
-        status["ohlcv_service"] = {
-            "live_collector": self.live_ohlcv_collector is not None,
-            "historic_collector": self.historic_ohlcv_collector is not None
-        }
-
-        status["trade_service"] = {
-            "live_collector": self.live_trade_collector is not None,
-            "historic_collector": self.historic_trade_collector is not None
-        }
-
-        return status
-
-    async def restart(self) -> bool:
-        """Restart the daemon"""
-        self.logger.info("Restarting OHLCV Service Daemon")
-        await self.stop()
-        await asyncio.sleep(2)  # Brief pause
-        return await self.start()
-
-    def _create_pid_file(self):
-        """Create PID file"""
-        try:
-            with open(self.pid_file, 'w') as f:
-                f.write(str(os.getpid()))
-            self.logger.debug(f"Created PID file: {self.pid_file}")
-        except Exception as e:
-            self.logger.warning(f"Could not create PID file: {e}")
-
-    def _remove_pid_file(self):
-        """Remove PID file"""
-        try:
-            if self.pid_file.exists():
-                self.pid_file.unlink()
-                self.logger.debug(f"Removed PID file: {self.pid_file}")
-        except Exception as e:
-            self.logger.warning(f"Could not remove PID file: {e}")
-
-    async def _register_daemon(self):
-        """Register daemon in ProcessCache"""
-        try:
-            async with ProcessCache() as cache:
-                admin_mail = os.getenv('ADMIN_MAIL', 'admin@fullon')
-
-                # Try to register process - use available API
-                await cache.register_process(
-                    process_type="ohlcv_daemon",
-                    component="fullon_ohlcv_service",
-                    params={
-                        "admin_mail": admin_mail,
-                        "user_id": self.config.user_id,
-                        "collection_interval": self.config.collection_interval,
-                        "version": "1.0.0",
-                        "pid": os.getpid()
-                    },
-                    message="Starting"
+                # Run both historic collectors concurrently
+                ohlcv_results, trade_results = await asyncio.gather(
+                    self.historic_ohlcv_collector.start_collection(),
+                    self.historic_trade_collector.start_collection(),
                 )
 
-                # Update to running status
-                await cache.update_process("ohlcv_daemon", "fullon_ohlcv_service", "running")
+                ohlcv_count = len(ohlcv_results)
+                trade_count = len(trade_results)
+                self.logger.info(
+                    "Historical collection completed",
+                    ohlcv_symbols=ohlcv_count,
+                    trade_symbols=trade_count,
+                )
 
+            # Phase 2: Live streaming (starts after historic completes)
+            if self.config.enable_streaming:
+                self.logger.info("Starting Live Collectors...")
+
+                # Run both live collectors concurrently (blocks indefinitely)
+                await asyncio.gather(
+                    self.live_ohlcv_collector.start_collection(),
+                    self.live_trade_collector.start_collection(),
+                )
+
+        except asyncio.CancelledError:
+            self.logger.info("Daemon shutdown requested by parent")
+            # Don't re-raise CancelledError here - let cleanup run in finally block
+            pass
         except Exception as e:
-            self.logger.warning(f"Could not register daemon in ProcessCache: {e}")
+            self.logger.error(f"Daemon error: {e}")
+            raise
+        finally:
+            await self.cleanup()
 
-    async def cleanup(self):
-        """Cleanup daemon resources"""
-        # Remove PID file
-        self._remove_pid_file()
+    async def cleanup(self) -> None:
+        """Cleanup daemon resources gracefully"""
+        self.logger.info("Starting daemon cleanup...")
 
-        # Clean up ExchangeQueue factory
+        # Stop live collectors first (they have active WebSocket connections)
+        cleanup_tasks = []
+
+        if self.live_trade_collector:
+            cleanup_tasks.append(
+                ("live_trade_collector", self.live_trade_collector.stop_collection())
+            )
+
+        if self.live_ohlcv_collector:
+            cleanup_tasks.append(
+                ("live_ohlcv_collector", self.live_ohlcv_collector.stop_collection())
+            )
+
+        # Run cleanup tasks concurrently but handle exceptions individually
+        for name, task in cleanup_tasks:
+            try:
+                await task
+                self.logger.debug(f"Successfully stopped {name}")
+            except asyncio.CancelledError:
+                self.logger.debug(f"{name} was cancelled during shutdown")
+            except Exception as e:
+                self.logger.warning(f"Error stopping {name}: {e}")
+
+        # Update ProcessCache status before cleanup
+        try:
+            async with ProcessCache() as cache:
+                if hasattr(self, "process_id") and self.process_id:
+                    # Try the documented API first, fall back to alternatives
+                    try:
+                        await cache.update_process(
+                            process_id=self.process_id,
+                            status=ProcessStatus.STOPPED,
+                            message="Daemon shutdown complete",
+                        )
+                    except (AttributeError, TypeError):
+                        # Fallback: try alternative APIs if available
+                        try:
+                            await cache.stop_process(self.process_id, "Daemon shutdown")
+                        except (AttributeError, TypeError):
+                            self.logger.debug("ProcessCache stop API not available, skipping")
+        except Exception as e:
+            self.logger.warning(f"Could not update ProcessCache: {e}")
+
+        # Clean up ExchangeQueue factory (this handles WebSocket cleanup)
         try:
             from fullon_exchange.queue import ExchangeQueue
+
             await ExchangeQueue.shutdown_factory()
             self.logger.debug("ExchangeQueue factory shut down")
         except Exception as e:
             self.logger.warning(f"Could not shutdown ExchangeQueue factory: {e}")
 
-        # Clean up ProcessCache registration
-        try:
-            async with ProcessCache() as cache:
-                await cache.stop_process("ohlcv_daemon", "fullon_ohlcv_service")
-        except Exception as e:
-            self.logger.warning(f"Could not clean up ProcessCache: {e}")
-
-
-def create_parser() -> argparse.ArgumentParser:
-    """Create CLI argument parser"""
-    parser = argparse.ArgumentParser(
-        description="fullon_ohlcv_service - OHLCV and Trade Data Collection Daemon",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  fullon-ohlcv-service start           # Start the daemon
-  fullon-ohlcv-service stop            # Stop the daemon
-  fullon-ohlcv-service status          # Show status
-  fullon-ohlcv-service restart         # Restart the daemon
-  fullon-ohlcv-service status --json   # Status in JSON format
-        """
-    )
-
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
-
-    # Start command
-    start_parser = subparsers.add_parser('start', help='Start the daemon')
-    start_parser.add_argument('--foreground', '-f', action='store_true',
-                             help='Run in foreground (don\'t daemonize)')
-
-    # Stop command
-    subparsers.add_parser('stop', help='Stop the daemon')
-
-    # Status command
-    status_parser = subparsers.add_parser('status', help='Show daemon status')
-    status_parser.add_argument('--json', action='store_true',
-                              help='Output status in JSON format')
-
-    # Restart command
-    restart_parser = subparsers.add_parser('restart', help='Restart the daemon')
-    restart_parser.add_argument('--foreground', '-f', action='store_true',
-                               help='Run in foreground after restart')
-
-    return parser
-
-
-async def run_daemon_forever(daemon: OhlcvServiceDaemon):
-    """Run daemon until shutdown signal"""
-    try:
-        while daemon.running:
-            await asyncio.sleep(1)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        await daemon.stop()
-
-
-async def main_async():
-    """Main async entry point"""
-    parser = create_parser()
-    args = parser.parse_args()
-
-    if not args.command:
-        parser.print_help()
-        return 1
-
-    daemon = OhlcvServiceDaemon()
-
-    try:
-        if args.command == 'start':
-            success = await daemon.start()
-            if not success:
-                return 1
-
-            if getattr(args, 'foreground', False):
-                print("Running in foreground... Press Ctrl+C to stop")
-                await run_daemon_forever(daemon)
-            else:
-                print("Daemon started successfully")
-
-        elif args.command == 'stop':
-            success = await daemon.stop()
-            return 0 if success else 1
-
-        elif args.command == 'status':
-            status = await daemon.status()
-
-            if getattr(args, 'json', False):
-                print(json.dumps(status, indent=2))
-            else:
-                print(f"Daemon Running: {status['daemon_running']}")
-                print(f"PID: {status['pid']}")
-                print(f"User ID: {status['config']['user_id']}")
-                print(f"OHLCV Collectors: {status['ohlcv_service'].get('active_collectors', 0)}")
-                print(f"Trade Collectors: {status['trade_service'].get('active_collectors', 0)}")
-
-        elif args.command == 'restart':
-            success = await daemon.restart()
-            if not success:
-                return 1
-
-            if getattr(args, 'foreground', False):
-                print("Running in foreground... Press Ctrl+C to stop")
-                await run_daemon_forever(daemon)
-            else:
-                print("Daemon restarted successfully")
-
-        return 0
-
-    except KeyboardInterrupt:
-        print("\nShutdown requested...")
-        await daemon.stop()
-        return 0
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
-
-
-def main():
-    """Main CLI entry point"""
-    try:
-        return asyncio.run(main_async())
-    except KeyboardInterrupt:
-        print("\nInterrupted")
-        return 130
-    except Exception as e:
-        print(f"Fatal error: {e}")
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+        self.logger.info("Daemon cleanup completed")

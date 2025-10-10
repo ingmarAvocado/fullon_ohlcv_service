@@ -1,6 +1,6 @@
 [project]
 name = "fullon-ohlcv-service"
-version = "0.3.2"
+version = "1.0.0"
 description = "Async daemon service for collecting OHLCV candles and trade data from cryptocurrency exchanges"
 authors = [
     {name = "ingmar", email = "ingmar@avocadoblock.com"}

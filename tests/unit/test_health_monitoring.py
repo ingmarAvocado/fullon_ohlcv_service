@@ -25,17 +25,20 @@ class TestOhlcvManagerHealthMonitoring:
         mock_process_cache_class.return_value.__aenter__.return_value = mock_cache
         mock_process_cache_class.return_value.__aexit__.return_value = None
 
+        # Mock register_process return value
+        mock_cache.register_process.return_value = "mock_process_id"
+
         # Call _register_process
         await self.manager._register_process()
 
         # Verify ProcessCache was used correctly
         mock_process_cache_class.assert_called_once()
-        mock_cache.new_process.assert_called_once_with(
-            tipe="ohlcv_service",
-            key="ohlcv_daemon",
-            pid=f"async:{id(self.manager)}",
-            params=["ohlcv_daemon"],
-            message="Started"
+        mock_cache.register_process.assert_called_once_with(
+            process_type="ohlcv",
+            component="ohlcv_daemon",
+            params={"pid": f"async:{id(self.manager)}", "args": ["ohlcv_daemon"]},
+            message="Started",
+            status="starting"
         )
 
     @pytest.mark.asyncio
@@ -73,13 +76,16 @@ class TestOhlcvManagerHealthMonitoring:
         mock_process_cache_class.return_value.__aenter__.return_value = mock_cache
         mock_process_cache_class.return_value.__aexit__.return_value = None
 
+        # Mock that manager has a process_id
+        self.manager.process_id = "mock_process_id"
+
         # Call _cleanup_process
         await self.manager._cleanup_process()
 
         # Verify ProcessCache was used correctly
         mock_process_cache_class.assert_called_once()
-        mock_cache.delete_process.assert_called_once_with(
-            "ohlcv_service", "ohlcv_daemon"
+        mock_cache.stop_process.assert_called_once_with(
+            "mock_process_id", "Manager shutdown"
         )
 
     @pytest.mark.asyncio
@@ -88,15 +94,18 @@ class TestOhlcvManagerHealthMonitoring:
         """Test process cleanup handles errors gracefully."""
         # Mock ProcessCache context manager with error
         mock_cache = AsyncMock()
-        mock_cache.delete_process.side_effect = Exception("Cache error")
+        mock_cache.stop_process.side_effect = Exception("Cache error")
         mock_process_cache_class.return_value.__aenter__.return_value = mock_cache
         mock_process_cache_class.return_value.__aexit__.return_value = None
+
+        # Mock that manager has a process_id
+        self.manager.process_id = "mock_process_id"
 
         # Call _cleanup_process - should not raise
         await self.manager._cleanup_process()
 
         # Verify error was handled
-        mock_cache.delete_process.assert_called_once()
+        mock_cache.stop_process.assert_called_once()
 
     @pytest.mark.asyncio
     @patch('fullon_ohlcv_service.ohlcv.manager.ProcessCache')
@@ -151,11 +160,14 @@ class TestOhlcvManagerHealthMonitoring:
         # Mock get_collection_targets
         mock_get_targets.return_value = {}
 
+        # Mock register_process return value
+        mock_cache.register_process.return_value = "mock_process_id"
+
         # Start manager
         await self.manager.start()
 
         # Verify process was registered
-        mock_cache.new_process.assert_called_once()
+        mock_cache.register_process.assert_called_once()
 
         # Stop manager
         await self.manager.stop()
@@ -173,13 +185,16 @@ class TestOhlcvManagerHealthMonitoring:
         # Mock get_collection_targets
         mock_get_targets.return_value = {}
 
+        # Mock register_process return value
+        mock_cache.register_process.return_value = "mock_process_id"
+
         # Start and stop manager
         await self.manager.start()
         await self.manager.stop()
 
         # Verify process was cleaned up
-        mock_cache.delete_process.assert_called_once_with(
-            "ohlcv_service", "ohlcv_daemon"
+        mock_cache.stop_process.assert_called_once_with(
+            "mock_process_id", "Manager shutdown"
         )
 
     @pytest.mark.asyncio
