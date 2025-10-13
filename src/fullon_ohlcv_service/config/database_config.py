@@ -35,22 +35,26 @@ async def get_collection_targets(user_id: int = 1, db_context=None) -> dict[str,
         # Get user's active exchanges
         exchanges = await db.exchanges.get_user_exchanges(uid=user_id)
 
+        # Get all category exchanges once for name lookup
+        cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
+        cat_ex_dict = {cat_ex.cat_ex_id: cat_ex.name for cat_ex in cat_exchanges}
+
         targets = {}
         for exchange in exchanges:
-            # Exchanges from get_user_exchanges are dictionaries per fullon_orm docs
-            exchange_name = exchange.get('ex_named', exchange.get('name', 'unknown'))
-            cat_ex_id = exchange.get('cat_ex_id')
-            ex_id = exchange.get('ex_id')  # Get the exchange ID for fullon_credentials
+            # Handle both dict (mocked) and Exchange object (real) cases
+            if isinstance(exchange, dict):
+                exchange_name = exchange.get("ex_named", exchange.get("name", "unknown"))
+                cat_ex_id = exchange.get("cat_ex_id")
+                ex_id = exchange.get("ex_id")
+            else:
+                # Exchange object from fullon_orm
+                exchange_name = getattr(exchange, "name", "unknown")
+                cat_ex_id = getattr(exchange, "cat_ex_id", None)
+                ex_id = getattr(exchange, "ex_id", None)
 
             if cat_ex_id:  # Basic validity check
                 # Get exchange name from cat_ex_id for symbol lookup
-                cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
-                exchange_category_name = None
-                for cat_ex in cat_exchanges:
-                    # CatExchange objects have attributes, not dictionary keys
-                    if cat_ex.cat_ex_id == cat_ex_id:
-                        exchange_category_name = cat_ex.name
-                        break
+                exchange_category_name = cat_ex_dict.get(cat_ex_id)
 
                 if not exchange_category_name:
                     logger.warning(f"Category exchange not found for cat_ex_id {cat_ex_id}")
@@ -60,17 +64,19 @@ async def get_collection_targets(user_id: int = 1, db_context=None) -> dict[str,
                 symbols = await db.symbols.get_all(exchange_name=exchange_category_name)
 
                 # Handle case where symbols don't have .active attribute (simpler test scenarios)
-                active_symbols = [s.symbol for s in symbols if getattr(s, 'active', True)]
+                active_symbols = [s.symbol for s in symbols if getattr(s, "active", True)]
                 if active_symbols:
                     targets[exchange_name] = {
                         "symbols": active_symbols,
                         "ex_id": ex_id,
-                        "exchange_category_name": exchange_category_name  # Add category name for fullon_exchange
+                        "exchange_category_name": exchange_category_name,  # Add category name for fullon_exchange
                     }
 
-        logger.info("Loaded configuration",
-                   exchanges=len(targets),
-                   total_symbols=sum(len(info["symbols"]) for info in targets.values()))
+        logger.info(
+            "Loaded configuration",
+            exchanges=len(targets),
+            total_symbols=sum(len(info["symbols"]) for info in targets.values()),
+        )
 
         return targets
 

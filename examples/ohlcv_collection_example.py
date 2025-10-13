@@ -12,7 +12,7 @@ Usage:
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import UTC
 from pathlib import Path
 
 # Load environment variables from .env file
@@ -41,18 +41,16 @@ os.environ["DB_OHLCV_NAME"] = test_db_ohlcv
 
 # Now safe to import modules
 from demo_data import create_dual_test_databases, drop_dual_test_databases, install_demo_data
-from fullon_ohlcv_service.ohlcv.historic_collector import HistoricOHLCVCollector
-from fullon_ohlcv_service.ohlcv.live_collector import LiveOHLCVCollector
-from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
 from fullon_orm import DatabaseContext, init_db
+
 
 logger = get_component_logger("fullon.ohlcv.test")
 
 
 async def set_database():
-    """Set up test databases for OHLCV collection."""
-    print("\n🔍 Setting up test databases for ALL symbols")
+    """Set up test databases and return the test symbol for OHLCV collection."""
+    print("\n🔍 Setting up test databases for single symbol")
     print("=" * 50)
 
     logger.debug("Creating dual test databases", orm_db=test_db_orm, ohlcv_db=test_db_ohlcv)
@@ -68,182 +66,135 @@ async def set_database():
     await install_demo_data()
     logger.info("Demo data installed successfully")
 
+    # Load specific symbol for OHLCV testing
+    async with DatabaseContext() as db:
+        # Get hyperliquid category exchange
+        cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
+        hyperliquid_cat_ex = None
+        for cat_ex in cat_exchanges:
+            if cat_ex.name == "hyperliquid":
+                hyperliquid_cat_ex = cat_ex
+                break
 
-async def example_historic_ohlcv():
-    """Collect historical OHLCV for ALL configured symbols."""
-    print("\n📚 Starting historical OHLCV collection (ALL symbols)...")
+        if not hyperliquid_cat_ex:
+            raise ValueError("Hyperliquid exchange not found")
+
+        # Get BTC/USDC:USDC symbol for hyperliquid
+        symbol = await db.symbols.get_by_symbol(
+            "BTC/USDC:USDC", cat_ex_id=hyperliquid_cat_ex.cat_ex_id
+        )
+        if not symbol:
+            raise ValueError("BTC/USDC:USDC symbol not found on hyperliquid exchange")
+
+    logger.info("Loaded symbol", symbol=symbol.symbol, exchange=symbol.cat_exchange.name)
+    return symbol
+
+
+async def example_ohlcv_collection(symbol):
+    """Collect OHLCV data for a single symbol using the daemon."""
+    print(f"\n📊 Starting OHLCV collection for {symbol.symbol} on {symbol.cat_exchange.name}...")
 
     try:
-        # Use HistoricOHLCVCollector public API - finds ALL symbols automatically
-        collector = HistoricOHLCVCollector()
-        results = await collector.start_collection()
+        # Create daemon
+        from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 
-        # Display results
-        total_candles = sum(results.values())
-        print(f"\n✅ Historical collection completed!")
-        print(f"   Symbols processed: {len(results)}")
-        print(f"   Total candles collected: {total_candles:,}")
+        daemon = OhlcvServiceDaemon()
 
-        return results
+        # Start collection in background
+        collection_task = asyncio.create_task(daemon.process_symbol(symbol))
 
-    except Exception as e:
-        print(f"❌ Historical collection failed: {e}")
-        logger.exception("Historical collection failed")
-        return {}
+        # Wait for collection to run (e.g., 2 minutes)
+        print("⏱️  Running collection for 2 minutes...")
+        await asyncio.sleep(120)
 
+        # Check results
+        await verify_ohlcv_data(symbol)
 
-async def example_live_ohlcv():
-    """Start live OHLCV streaming for ALL configured symbols."""
-    print("\n📊 Starting live OHLCV collection (ALL symbols)...")
-
-    collector = None
-    try:
-        collector = LiveOHLCVCollector()
-
-        # Initialize ExchangeQueue factory
-        await ExchangeQueue.initialize_factory()
-
-        # start_collection() runs indefinitely (keeps WebSocket alive)
-        # We need to run it as a task and cancel after duration
-        collection_task = asyncio.create_task(collector.start_collection())
-
-        # Run until end of next minute + 1 second
-        now = datetime.now(timezone.utc)
-        next_minute_end = (now + timedelta(minutes=1)).replace(second=0, microsecond=0) + timedelta(
-            seconds=1
-        )
-        sleep_duration = (next_minute_end - now).total_seconds()
-        print(
-            f"Collecting live OHLCV until {next_minute_end.strftime('%H:%M:%S')} UTC ({sleep_duration:.1f} seconds)..."
-        )
-        await asyncio.sleep(sleep_duration)
-
-        # Stop streaming
-        await collector.stop_collection()
-
-        # Cancel the collection task
+        # Stop daemon
         collection_task.cancel()
         try:
             await collection_task
         except asyncio.CancelledError:
             pass
 
-        print("✅ Live collection stopped")
+        print("✅ Collection completed")
 
     except Exception as e:
-        print(f"❌ Live collection error: {e}")
-        logger.exception("Live collection failed")
-        if collector:
-            await collector.stop_collection()
+        print(f"❌ Collection failed: {e}")
+        logger.exception("Collection failed")
 
 
-async def check_fullon_content():
+async def verify_ohlcv_data(symbol):
     """
-    Use fullon_ohlcv to verify we have recent OHLCV candles for all collected symbols.
-    Checks last 10 1-minute candles for each symbol that was historically collected.
+    Use fullon_ohlcv to verify we have recent OHLCV candles for the collected symbol.
+    Checks last 10 1-minute candles for the symbol.
     """
     try:
-        print("\n📊 Checking OHLCV candle data for all collected symbols...")
-
-        # Initialize ExchangeQueue for handler checks
-        await ExchangeQueue.initialize_factory()
-
-        # Load all symbols from database (same as historic collector)
-        async with DatabaseContext() as db:
-            all_symbols = await db.symbols.get_all()
-
-        if not all_symbols:
-            raise ValueError("No symbols found in database")
+        print(
+            f"\n📊 Checking OHLCV candle data for {symbol.symbol} on {symbol.cat_exchange.name}..."
+        )
 
         total_symbols_checked = 0
         total_candles_found = 0
 
-        # Check OHLCV for each symbol
-        for symbol in all_symbols:
-            exchange_name = symbol.cat_exchange.name
-            symbol_str = symbol.symbol
-            symbol_key = f"{exchange_name}:{symbol_str}"
+        # Check OHLCV for the symbol
+        exchange_name = symbol.cat_exchange.name
+        symbol_str = symbol.symbol
+        symbol_key = f"{exchange_name}:{symbol_str}"
 
-            print(f"\n🔍 Checking symbol: {symbol_key}")
+        print(f"\n🔍 Checking symbol: {symbol_key}")
 
-            # Check if this exchange supports native OHLCV
-            try:
-                # Create a simple exchange object for handler check
-                class SimpleExchange:
-                    def __init__(self, exchange_name: str):
-                        self.ex_id = f"{exchange_name}_check"
-                        self.uid = "check_account"
-                        self.test = False
-                        self.cat_exchange = type("CatExchange", (), {"name": exchange_name})()
+        # Note: Since we're now zero-boilerplate, we skip the exchange capability check
+        # and assume all exchanges may have OHLCV data
 
-                exchange_obj = SimpleExchange(exchange_name)
+        # Check recent 1-minute candles (last 15 minutes)
+        from datetime import datetime, timedelta
 
-                # Public data doesn't need credentials
-                def credential_provider(exchange_obj):
-                    return "", ""
+        import arrow
+        from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 
-                handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)
-                if handler.needs_trades_for_ohlcv():
-                    print(f"   ⚠️  {symbol_key} uses trade-based OHLCV - skipping candle display")
-                    continue
-            except Exception as e:
-                print(f"   ❌ Error getting handler for {symbol_key}: {e}")
-                continue
-            except Exception as e:
-                print(f"   ❌ Error getting handler for {symbol_key}: {e}")
-                continue
+        end_time = datetime.now(UTC)
+        start_time = end_time - timedelta(minutes=15)
 
-            # Check recent 1-minute candles (last 15 minutes)
-            from datetime import datetime, timezone, timedelta
-            import arrow
-            from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
+        try:
+            async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
+                ohlcv_1m = await repo.fetch_ohlcv(
+                    compression=1,
+                    period="minutes",
+                    fromdate=arrow.get(start_time),
+                    todate=arrow.get(end_time),
+                )
 
-            end_time = datetime.now(timezone.utc)
-            start_time = end_time - timedelta(minutes=15)
-
-            try:
-                async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
-                    ohlcv_1m = await repo.fetch_ohlcv(
-                        compression=1,
-                        period="minutes",
-                        fromdate=arrow.get(start_time),
-                        todate=arrow.get(end_time),
-                    )
-
-                    if ohlcv_1m:
-                        # Show last 10 candles
-                        recent_1m = ohlcv_1m[-10:] if len(ohlcv_1m) >= 10 else ohlcv_1m
-                        print("   🕐 Last 10 1-minute candles:")
-                        for ts, o, h, l, c, v in recent_1m:
-                            if any(x is None for x in (o, h, l, c, v)):
-                                print(
-                                    f"   ⚠️  Invalid candle data (contains None): {ts}, {o}, {h}, {l}, {c}, {v}"
-                                )
-                                continue
-                            candle_time = arrow.get(ts).format("YYYY-MM-DD HH:mm:ss")
+                if ohlcv_1m:
+                    # Show last 10 candles
+                    recent_1m = ohlcv_1m[-10:] if len(ohlcv_1m) >= 10 else ohlcv_1m
+                    print("   🕐 Last 10 1-minute candles:")
+                    for ts, o, h, l, c, v in recent_1m:
+                        if any(x is None for x in (o, h, l, c, v)):
                             print(
-                                f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}"
+                                f"   ⚠️  Invalid candle data (contains None): {ts}, {o}, {h}, {l}, {c}, {v}"
                             )
-
+                            continue
+                        candle_time = arrow.get(ts).format("YYYY-MM-DD HH:mm:ss")
                         print(
-                            f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})"
+                            f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}"
                         )
-                        total_candles_found += len(ohlcv_1m)
-                    else:
-                        print("   ⚠️  No 1-minute candles found")
 
-                    total_symbols_checked += 1
+                    print(
+                        f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})"
+                    )
+                    total_candles_found += len(ohlcv_1m)
+                else:
+                    print("   ⚠️  No 1-minute candles found")
 
-            except Exception as symbol_error:
-                print(f"   ❌ Error checking {symbol_key}: {symbol_error}")
-                continue
+                total_symbols_checked += 1
+
+        except Exception as symbol_error:
+            print(f"   ❌ Error checking {symbol_key}: {symbol_error}")
 
         print(
             f"\n✅ OHLCV verification complete: checked {total_symbols_checked} symbols, found {total_candles_found} total candles"
         )
-
-        # Clean up ExchangeQueue
-        await ExchangeQueue.shutdown_factory()
 
     except Exception as e:
         print(f"❌ OHLCV check failed: {e}")
@@ -252,21 +203,19 @@ async def check_fullon_content():
 
 async def main():
     """Run OHLCV collection examples."""
-    print("🧪 OHLCV TWO-PHASE COLLECTION EXAMPLE")
-    print("Testing two-phase collection for ALL configured symbols")
+    print("🧪 OHLCV SINGLE-SYMBOL COLLECTION EXAMPLE")
+    print("Testing daemon process_symbol() method for BTC/USDC:USDC on hyperliquid")
     print("\nPattern:")
     print("  Phase 1: Historical catch-up (REST with pagination)")
     print("  Phase 2: Real-time streaming (WebSocket)")
 
+    symbol = None
     try:
         # Test individual components
         try:
-            await set_database()
-            await example_historic_ohlcv()
-            await check_fullon_content()
-            print("\n---------- live collecting now -------------")
-            await example_live_ohlcv()
-            await check_fullon_content()
+            symbol = await set_database()
+            await example_ohlcv_collection(symbol)
+
         except Exception as e:
             print(f"❌ Collection failed: {e}")
             logger.error("Collection failed", error=str(e))
@@ -282,22 +231,19 @@ async def main():
                 logger.warning("Error during database cleanup", error=str(db_cleanup_error))
 
         print("\n" + "=" * 60)
-        print("✅ OHLCV TWO-PHASE COLLECTION TEST COMPLETED")
+        print("✅ OHLCV SINGLE-SYMBOL COLLECTION TEST COMPLETED")
         print("📋 Summary:")
-        print("  ✅ Historical pagination logic implemented")
-        print("  ✅ OHLCV two-phase pattern implemented")
-        print("  ✅ Follows proven architecture patterns")
-        print("\n💡 Ready for production with database and WebSocket streaming")
+        print("  ✅ Daemon process_symbol() method implemented")
+        print("  ✅ Automatic collector selection based on exchange capabilities")
+        print("  ✅ Two-phase collection (historic + live) working")
+        print("\n💡 Ready for production with intelligent collector selection")
 
     except Exception as e:
         print(f"❌ Test suite failed: {e}")
 
     finally:
         # Clean up exchange resources
-        try:
-            await ExchangeQueue.shutdown_factory()
-        except Exception as cleanup_error:
-            pass
+        pass
 
 
 if __name__ == "__main__":

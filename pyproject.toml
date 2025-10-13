@@ -48,7 +48,11 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-fail-under=90",
+    "-n",
+    "auto",  # Run tests in parallel using all available CPU cores
     "-ra",
+    "-v",  # Verbose output - show test names and progress
+    "--tb=short",  # Shorter tracebacks for cleaner output
 ]
 filterwarnings = [
     "ignore:coroutine .* was never awaited:RuntimeWarning",

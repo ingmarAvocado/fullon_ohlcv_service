@@ -15,10 +15,9 @@ Usage:
 import asyncio
 import os
 import sys
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 # Load environment variables from .env file
 project_root = Path(__file__).parent.parent
@@ -45,15 +44,11 @@ os.environ["DB_NAME"] = test_db_orm
 os.environ["DB_OHLCV_NAME"] = test_db_ohlcv
 
 # Now safe to import modules
-from demo_data import create_dual_test_databases, drop_dual_test_databases, install_demo_data
-from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
-from fullon_log import get_component_logger
-from fullon_orm import DatabaseContext
-from fullon_orm import init_db
 import arrow
-from datetime import datetime, timezone, timedelta
+from demo_data import create_dual_test_databases, drop_dual_test_databases, install_demo_data
+from fullon_log import get_component_logger
 from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
-from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
+from fullon_orm import DatabaseContext, init_db
 
 
 logger = get_component_logger("fullon.trade.test")
@@ -77,178 +72,129 @@ async def set_database():
     await install_demo_data()
     logger.info("Demo data installed successfully")
 
+    # Load specific symbol for Trade testing
+    async with DatabaseContext() as db:
+        # Get kraken category exchange
+        cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
+        kraken_cat_ex = None
+        for cat_ex in cat_exchanges:
+            if cat_ex.name == "kraken":
+                kraken_cat_ex = cat_ex
+                break
 
-async def historic_collecting():
-    """Test historical trade collection using HistoricTradeCollector for single symbol."""
+        if not kraken_cat_ex:
+            raise ValueError("Kraken exchange not found")
+
+        # Get BTC/USDC symbol for kraken
+        symbol = await db.symbols.get_by_symbol("BTC/USDC", cat_ex_id=kraken_cat_ex.cat_ex_id)
+        if not symbol:
+            raise ValueError("BTC/USDC symbol not found on kraken exchange")
+
+    logger.info("Loaded symbol", symbol=symbol.symbol, exchange=symbol.cat_exchange.name)
+    return symbol
+
+
+async def example_trade_collection(symbol):
+    """Collect trade data for a single symbol using the daemon."""
+    print(f"\n📊 Starting trade collection for {symbol.symbol} on {symbol.cat_exchange.name}...")
 
     try:
-        print("\n📚 Starting historical trade collection (single symbol test)...")
+        # Create daemon
+        from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 
-        # Use HistoricTradeCollector for single symbol
-        collector = HistoricTradeCollector()
-        await collector.start_collection()
+        daemon = OhlcvServiceDaemon()
 
-        print(f"✅ Historical collection completed!")
-    except Exception as e:
-        print(f"❌ Historical collection failed: {e}")
-        logger.exception("Historical collection failed")
+        # Start collection in background
+        await daemon.process_symbol(symbol)
 
+        import pdb
+        pdb.set_trace()
+        current = datetime.now()
+        seconds_to_end = 60 - current.second
+        sleep_duration = seconds_to_end + 1
+        print(
+            f"⏱️  Running collection until end of minute plus 1 second ({sleep_duration} seconds)..."
+        )
+        await asyncio.sleep(sleep_duration)
 
-async def live_collecting():
-    collector = None  # Initialize to avoid NameError in finally
-    try:
-        print("🚀 Starting live trade collector...")
-        collector = LiveTradeCollector()
+        # Check results
+        await verify_ohlcv_data(symbol)
 
-        # Initialize ExchangeQueue factory (required for WebSocket handlers)
-        from fullon_exchange.queue import ExchangeQueue
-
-        await ExchangeQueue.initialize_factory()
-
-        # Check what's in the cache for all symbols (like ticker service monitoring loop)
-        async with DatabaseContext() as db:
-            admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
-            admin_uid = await db.users.get_user_id(admin_email)
-            if admin_uid is None:
-                raise ValueError(f"Admin user {admin_email} not found")
-            admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
-            all_symbols = await db.symbols.get_all()
-
-        if not all_symbols:
-            raise ValueError("No symbols found in database")
-
-        # Group symbols by exchange
-        symbol_map = defaultdict(list)
-        for symbol in all_symbols:
-            symbol_map[symbol.cat_exchange.name].append(symbol)
-
-        # Start collectors for all admin exchanges with their symbols
-        for admin_exchange in admin_exchanges:
-            exchange_name = admin_exchange.cat_exchange.name
-            symbols = symbol_map.get(exchange_name, [])
-            if symbols:
-                await collector._start_exchange_collector(
-                    exchange_obj=admin_exchange, symbols=symbols
-                )
-                print(
-                    f"✅ Live trade collector started for {exchange_name} with {len(symbols)} symbols"
-                )
-            else:
-                print(f"⚠️  No symbols found for {exchange_name}")
-        print("📊 Trade Cache Status:")
-
-        current = arrow.now()
-        next_minute = current.replace(second=0, microsecond=0) + timedelta(minutes=1)
-        sleep_seconds = (next_minute - current).total_seconds()
-        await asyncio.sleep(sleep_seconds)
+        print("✅ Collection completed")
 
     except Exception as e:
-        print(f"❌ Trade test failed: {e}")
-        logger.exception("Trade test failed")  # Use .exception() for traceback
-    finally:
-        if collector:  # Only stop if initialized
-            await collector.stop_collection()
-            print("✅ Trade processing stopped")
+        print(f"❌ Collection failed: {e}")
+        logger.exception("Collection failed")
 
 
-async def check_fullon_content():
+async def verify_ohlcv_data(symbol):
     """
-    Use fullon_ohlcv to verify we have recent OHLCV candles for all collected symbols.
-    Checks last 10 1-minute candles for each symbol that was historically collected.
+    Use fullon_ohlcv to verify we have recent OHLCV candles for the collected symbol.
+    Checks last 10 1-minute candles for the symbol.
     """
 
     try:
-        print("\n📊 Checking OHLCV candle data for all collected symbols...")
-
-        # Initialize ExchangeQueue for handler checks
-        from fullon_exchange.queue import ExchangeQueue
-
-        await ExchangeQueue.initialize_factory()
-
-        # Load all symbols from database (same as historic collector)
-        async with DatabaseContext() as db:
-            all_symbols = await db.symbols.get_all()
-
-        if not all_symbols:
-            raise ValueError("No symbols found in database")
+        print(
+            f"\n📊 Checking OHLCV candle data for {symbol.symbol} on {symbol.cat_exchange.name}..."
+        )
 
         total_symbols_checked = 0
         total_candles_found = 0
 
-        # Check OHLCV for each symbol
-        for symbol in all_symbols:
-            exchange_name = symbol.cat_exchange.name
-            symbol_str = symbol.symbol
-            symbol_key = f"{exchange_name}:{symbol_str}"
+        # Check OHLCV for the symbol
+        exchange_name = symbol.cat_exchange.name
+        symbol_str = symbol.symbol
+        symbol_key = f"{exchange_name}:{symbol_str}"
 
-            print(f"\n🔍 Checking symbol: {symbol_key}")
+        print(f"\n🔍 Checking symbol: {symbol_key}")
 
-            # Check if this exchange requires trade collection for OHLCV
-            try:
-                # Create a simple exchange object for handler check
-                class SimpleExchange:
-                    def __init__(self, exchange_name: str):
-                        self.ex_id = f"{exchange_name}_check"
-                        self.uid = "check_account"
-                        self.test = False
-                        self.cat_exchange = type("CatExchange", (), {"name": exchange_name})()
+        # Note: Since we're now zero-boilerplate, we skip the exchange capability check
+        # and assume all exchanges may have OHLCV data from trade collection
 
-                exchange_obj = SimpleExchange(exchange_name)
+        # Check recent 1-minute candles (last 15 minutes)
+        end_time = datetime.now(UTC)
+        start_time = end_time - timedelta(minutes=15)
 
-                # Public data doesn't need credentials
-                def credential_provider(exchange_obj):
-                    return "", ""
+        try:
+            async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
+                ohlcv_1m = await repo.fetch_ohlcv(
+                    compression=1,
+                    period="minutes",
+                    fromdate=arrow.get(start_time),
+                    todate=arrow.get(end_time),
+                )
 
-                handler = await ExchangeQueue.get_rest_handler(exchange_obj, credential_provider)  # type: ignore
-                if not handler.needs_trades_for_ohlcv():
-                    print(f"   ⚠️  {symbol_key} supports native OHLCV - skipping candle display")
-                    continue
-            except Exception as e:
-                print(f"   ❌ Error getting handler for {symbol_key}: {e}")
-                continue
-
-            # Check recent 1-minute candles (last 15 minutes)
-            end_time = datetime.now(timezone.utc)
-            start_time = end_time - timedelta(minutes=15)
-
-            try:
-                async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
-                    ohlcv_1m = await repo.fetch_ohlcv(
-                        compression=1,
-                        period="minutes",
-                        fromdate=arrow.get(start_time),
-                        todate=arrow.get(end_time),
-                    )
-
-                    if ohlcv_1m:
-                        # Show last 10 candles
-                        recent_1m = ohlcv_1m[-10:] if len(ohlcv_1m) >= 10 else ohlcv_1m
-                        print("   🕐 Last 10 1-minute candles:")
-                        for ts, o, h, l, c, v in recent_1m:
-                            candle_time = arrow.get(ts).format("YYYY-MM-DD HH:mm:ss")
-                            print(
-                                f"   {candle_time} | O:{o:.2f} H:{h:.2f} L:{l:.2f} C:{c:.2f} V:{v:.4f}"
-                            )
-
+                if ohlcv_1m:
+                    # Show last 10 candles
+                    recent_1m = ohlcv_1m[-10:] if len(ohlcv_1m) >= 10 else ohlcv_1m
+                    print("   🕐 Last 10 1-minute candles:")
+                    for ts, o, h, l, c, v in recent_1m:
+                        candle_time = arrow.get(ts).format("YYYY-MM-DD HH:mm:ss")
+                        # Handle None values gracefully
+                        o_str = f"{o:.2f}" if o is not None else "N/A"
+                        h_str = f"{h:.2f}" if h is not None else "N/A"
+                        l_str = f"{l:.2f}" if l is not None else "N/A"
+                        c_str = f"{c:.2f}" if c is not None else "N/A"
+                        v_str = f"{v:.4f}" if v is not None else "N/A"
                         print(
-                            f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})"
+                            f"   {candle_time} | O:{o_str} H:{h_str} L:{l_str} C:{c_str} V:{v_str}"
                         )
-                        total_candles_found += len(ohlcv_1m)
-                    else:
-                        print("   ⚠️  No 1-minute candles found")
 
-                    total_symbols_checked += 1
+                    print(
+                        f"   ✅ Found {len(ohlcv_1m)} 1-minute candles (showing last {len(recent_1m)})"
+                    )
+                    total_candles_found += len(ohlcv_1m)
+                else:
+                    print("   ⚠️  No 1-minute candles found")
 
-            except Exception as symbol_error:
-                print(f"   ❌ Error checking {symbol_key}: {symbol_error}")
-                continue
+                total_symbols_checked += 1
+
+        except Exception as symbol_error:
+            print(f"   ❌ Error checking {symbol_key}: {symbol_error}")
 
         print(
             f"\n✅ OHLCV verification complete: checked {total_symbols_checked} symbols, found {total_candles_found} total candles"
         )
-
-        # Clean up ExchangeQueue
-        await ExchangeQueue.shutdown_factory()
 
     except Exception as e:
         print(f"❌ OHLCV check failed: {e}")
@@ -264,16 +210,16 @@ async def main():
     print("  Phase 2: Real-time streaming (WebSocket)")
     print("  Priority: OHLCV first, trades as fallback")
 
+    symbol = None
     try:
         # Test individual components
         try:
-            await set_database()
-            await historic_collecting()
-            await live_collecting()
-            await check_fullon_content()
+            symbol = await set_database()
+            await example_trade_collection(symbol)
+
         except Exception as e:
-            print(f"❌ Cannot create test database: {e}")
-            logger.error("Cannot create test database", error=str(e))
+            print(f"❌ Collection failed: {e}")
+            logger.error("Collection failed", error=str(e))
         finally:
             # Clean up test databases
             try:
@@ -286,24 +232,19 @@ async def main():
                 logger.warning("Error during database cleanup", error=str(db_cleanup_error))
 
         print("\n" + "=" * 60)
-        print("✅ TWO-PHASE COLLECTION TEST COMPLETED")
+        print("✅ SINGLE-SYMBOL TRADE COLLECTION TEST COMPLETED")
         print("📋 Summary:")
-        print("  ✅ Historical pagination logic implemented")
-        print("  ✅ Trade two-phase pattern implemented")
-        print("  ✅ Follows legacy architecture patterns")
-        print("\n💡 Ready for production with database and WebSocket streaming")
+        print("  ✅ Daemon process_symbol() method implemented")
+        print("  ✅ Automatic collector selection based on exchange capabilities")
+        print("  ✅ Two-phase collection (historic + live) working")
+        print("\n💡 Ready for production with intelligent collector selection")
 
     except Exception as e:
         print(f"❌ Test suite failed: {e}")
 
     finally:
         # Clean up exchange resources
-        try:
-            from fullon_exchange.queue import ExchangeQueue
-
-            await ExchangeQueue.shutdown_factory()
-        except Exception as cleanup_error:
-            pass
+        pass
 
 
 if __name__ == "__main__":

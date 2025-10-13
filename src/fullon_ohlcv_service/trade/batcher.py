@@ -8,11 +8,12 @@ Collects trades from Redis and saves them to PostgreSQL in coordinated batches.
 import asyncio
 import time
 import traceback
-from typing import Dict, Set, List, Any
-from datetime import datetime, timezone
+from contextlib import suppress
+from typing import Any
 
-from fullon_log import get_component_logger
+import arrow
 from fullon_cache import TradesCache
+from fullon_log import get_component_logger
 from fullon_ohlcv.models import Trade
 from fullon_ohlcv.repositories.ohlcv import TradeRepository
 from fullon_orm.models import Trade as ORMTrade
@@ -42,7 +43,7 @@ class GlobalTradeBatcher:
             return
 
         self.logger = get_component_logger("fullon.trade.batcher")
-        self.active_symbols: Set[str] = set()
+        self.active_symbols: set[str] = set()
         self.running = False
         self._batch_task = None
         self._batch_interval = 59.9  # Process just before minute boundary
@@ -65,7 +66,7 @@ class GlobalTradeBatcher:
                 "Symbol registered for batch processing",
                 exchange=exchange,
                 symbol=symbol,
-                total_symbols=len(self.active_symbols)
+                total_symbols=len(self.active_symbols),
             )
 
         # Start batch processing if not already running
@@ -87,7 +88,7 @@ class GlobalTradeBatcher:
                 "Symbol unregistered from batch processing",
                 exchange=exchange,
                 symbol=symbol,
-                remaining_symbols=len(self.active_symbols)
+                remaining_symbols=len(self.active_symbols),
             )
 
         # Stop batch processing if no symbols remain
@@ -109,10 +110,8 @@ class GlobalTradeBatcher:
 
         if self._batch_task and not self._batch_task.done():
             self._batch_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._batch_task
-            except asyncio.CancelledError:
-                pass
 
         self.logger.info("Batch processing stopped")
 
@@ -131,25 +130,22 @@ class GlobalTradeBatcher:
                         "Batch time calculation issue",
                         current_time=current_time,
                         next_batch_time=next_batch_time,
-                        wait_time=wait_time
+                        wait_time=wait_time,
                     )
                     # Force minimum wait to prevent tight loop
                     wait_time = self._batch_interval  # Use full interval (59.9s)
                     next_batch_time = current_time + wait_time
 
                 # Log countdown to next batch
-                if wait_time > 1:
-                    wait_display = f"{wait_time:.1f}s"
-                else:
-                    wait_display = f"{wait_time*1000:.0f}ms"
+                wait_display = f"{wait_time:.1f}s" if wait_time > 1 else f"{wait_time * 1000:.0f}ms"
 
-                next_batch_datetime = datetime.fromtimestamp(next_batch_time, tz=timezone.utc)
+                next_batch_datetime = arrow.get(next_batch_time)
 
                 self.logger.debug(
                     "Waiting for next batch cycle",
                     wait_time=wait_display,
-                    next_batch_at=next_batch_datetime.strftime('%H:%M:%S.%f')[:-3] + ' UTC',
-                    active_symbols=len(self.active_symbols)
+                    next_batch_at=next_batch_datetime.strftime("%H:%M:%S.%f")[:-3] + " UTC",
+                    active_symbols=len(self.active_symbols),
                 )
                 await asyncio.sleep(wait_time)
 
@@ -157,10 +153,7 @@ class GlobalTradeBatcher:
                 await self._process_batch()
 
             except Exception as e:
-                self.logger.error(
-                    "Batch processing error",
-                    error=str(e)
-                )
+                self.logger.error("Batch processing error", error=str(e))
                 await asyncio.sleep(5)  # Brief pause before retry
 
     def _calculate_next_batch_time(self) -> float:
@@ -195,7 +188,7 @@ class GlobalTradeBatcher:
         self.logger.debug(
             "Starting batch processing cycle",
             symbols_count=len(symbols_to_process),
-            symbols=symbols_to_process
+            symbols=symbols_to_process,
         )
 
         # Process each symbol
@@ -205,12 +198,14 @@ class GlobalTradeBatcher:
                 trades_count = await self._process_single_symbol(exchange, symbol)
 
                 # Track results for detailed logging
-                symbol_results.append({
-                    'symbol_key': symbol_key,
-                    'exchange': exchange,
-                    'symbol': symbol,
-                    'trades_count': trades_count
-                })
+                symbol_results.append(
+                    {
+                        "symbol_key": symbol_key,
+                        "exchange": exchange,
+                        "symbol": symbol,
+                        "trades_count": trades_count,
+                    }
+                )
 
                 if trades_count > 0:
                     symbols_processed += 1
@@ -221,46 +216,48 @@ class GlobalTradeBatcher:
                     "Error processing symbol",
                     symbol=symbol_key,
                     error=str(e),
-                    error_type=type(e).__name__
+                    error_type=type(e).__name__,
                 )
-                symbol_results.append({
-                    'symbol_key': symbol_key,
-                    'trades_count': 0,
-                    'error': str(e)
-                })
+                symbol_results.append(
+                    {"symbol_key": symbol_key, "trades_count": 0, "error": str(e)}
+                )
 
         batch_duration = time.time() - batch_start
 
         # Log detailed results for each symbol
         for result in symbol_results:
-            if result['trades_count'] > 0:
+            if result["trades_count"] > 0:
                 self.logger.info(
-                    f"✓ {result['symbol_key']} - {result['trades_count']} trades processed from Redis → PostgreSQL"
+                    "Symbol batch processed successfully",
+                    symbol=result["symbol_key"],
+                    trades_count=result["trades_count"],
+                    source="Redis",
+                    destination="PostgreSQL",
                 )
-            elif 'error' in result:
+            elif "error" in result:
                 self.logger.error(
-                    f"✗ {result['symbol_key']} - processing failed: {result['error']}"
+                    "Symbol batch processing failed",
+                    symbol=result["symbol_key"],
+                    error=result["error"],
                 )
             else:
                 # Debug level since no trades is a normal occurrence
-                self.logger.debug(
-                    f"○ {result['symbol_key']} - no trades found in Redis buffer"
-                )
+                self.logger.debug("No trades in buffer for symbol", symbol=result["symbol_key"])
 
         # Summary log
         if symbols_processed > 0:
             self.logger.info(
-                "📊 Batch cycle completed",
+                "Batch cycle completed",
                 symbols_with_trades=symbols_processed,
                 total_symbols=len(symbols_to_process),
                 total_trades=total_trades,
-                duration=f"{batch_duration:.2f}s"
+                duration_seconds=round(batch_duration, 2),
             )
         else:
             self.logger.info(
-                "📊 Batch cycle completed - no trades to process",
+                "Batch cycle completed - no trades to process",
                 total_symbols=len(symbols_to_process),
-                duration=f"{batch_duration:.2f}s"
+                duration_seconds=round(batch_duration, 2),
             )
 
     async def _process_single_symbol(self, exchange: str, symbol: str) -> int:
@@ -290,14 +287,16 @@ class GlobalTradeBatcher:
                 success = await repo.save_trades(trades)
 
                 if success:
-                    self.logger.debug(f"{symbol}:{exchange} - {len(trades)} trades saved")
+                    self.logger.debug(
+                        "Trades saved to PostgreSQL",
+                        exchange=exchange,
+                        symbol=symbol,
+                        trades_count=len(trades),
+                    )
                     return len(trades)
                 else:
                     self.logger.warning(
-                        "Failed to save trades",
-                        exchange=exchange,
-                        symbol=symbol,
-                        count=len(trades)
+                        "Failed to save trades", exchange=exchange, symbol=symbol, count=len(trades)
                     )
                     return 0
 
@@ -307,12 +306,12 @@ class GlobalTradeBatcher:
                 exchange=exchange,
                 symbol=symbol,
                 error=str(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             self.logger.debug("Full traceback", traceback=traceback.format_exc())
             return 0
 
-    def _convert_to_trade_objects(self, trades_data: List[Any]) -> List[Trade]:
+    def _convert_to_trade_objects(self, trades_data: list[Any]) -> list[Trade]:
         """
         Convert raw trade data to Trade objects.
 
@@ -329,38 +328,36 @@ class GlobalTradeBatcher:
                 if isinstance(trade_item, ORMTrade):
                     # Handle fullon_orm Trade objects
                     timestamp = trade_item.time
-                    if isinstance(timestamp, (int, float)):
+                    if isinstance(timestamp, int | float):
                         # Convert timestamp to datetime if it's numeric
-                        timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                        timestamp = arrow.get(timestamp).datetime
                     trade = Trade(
                         timestamp=timestamp,
                         price=float(trade_item.price),
                         volume=float(trade_item.volume),
                         side=str(trade_item.side),
-                        type='market'
+                        type="market",
                     )
                 else:
                     # Handle dictionary format (legacy/fallback)
-                    timestamp = trade_item.get('timestamp', 0)
+                    timestamp = trade_item.get("timestamp", 0)
                     if timestamp > 1e12:  # milliseconds
-                        timestamp_dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                        timestamp_dt = arrow.get(timestamp / 1000).datetime
                     else:  # seconds
-                        timestamp_dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                        timestamp_dt = arrow.get(timestamp).datetime
 
                     trade = Trade(
                         timestamp=timestamp_dt,
-                        price=float(trade_item.get('price', 0)),
-                        volume=float(trade_item.get('amount', trade_item.get('volume', 0))),
-                        side=str(trade_item.get('side', 'unknown')),
-                        type='market'
+                        price=float(trade_item.get("price", 0)),
+                        volume=float(trade_item.get("amount", trade_item.get("volume", 0))),
+                        side=str(trade_item.get("side", "unknown")),
+                        type="market",
                     )
                 trade_objects.append(trade)
 
             except Exception as e:
                 self.logger.warning(
-                    "Failed to convert trade",
-                    error=str(e),
-                    trade=str(trade_item)[:100]
+                    "Failed to convert trade", error=str(e), trade=str(trade_item)[:100]
                 )
                 continue
 

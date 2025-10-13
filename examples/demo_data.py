@@ -13,15 +13,14 @@ Usage:
     python examples/demo_data.py --run-all    # Setup, run examples, cleanup
 """
 
-import asyncio
 import argparse
+import asyncio
 import os
-import sys
 import random
 import string
-from typing import Optional, Tuple
-from decimal import Decimal
+import sys
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
 
 # Load environment variables from .env file
@@ -34,11 +33,11 @@ except ImportError:
 except Exception as e:
     print(f"⚠️  Could not load .env file: {e}")
 
-from fullon_orm import init_db, DatabaseContext
-from fullon_orm.models import User, Exchange, CatExchange, Symbol, Bot, Strategy, CatStrategy, Feed
-from fullon_orm.models.user import RoleEnum
-from fullon_log import get_component_logger
 import redis
+from fullon_log import get_component_logger
+from fullon_orm import DatabaseContext, init_db
+from fullon_orm.models import Bot, CatStrategy, Exchange, Feed, Strategy, Symbol, User
+from fullon_orm.models.user import RoleEnum
 
 # Create fullon logger alongside color output
 fullon_logger = get_component_logger("fullon.ohlcv.example.demo_data")
@@ -76,11 +75,16 @@ def print_header(msg: str):
     print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}\n")
 
 
-def generate_test_db_name() -> str:
-    """Generate unique test database name"""
+def generate_test_db_name(worker_id: str = "") -> str:
+    """Generate worker-aware test database name."""
     base_name = os.getenv('DB_TEST_NAME', 'fullon_ohlcv_test')
-    random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    return f"{base_name}_{random_suffix}"
+
+    if worker_id:
+        return f"{base_name}_{worker_id}"
+    else:
+        # Fallback to random for manual/CLI usage
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        return f"{base_name}_{random_suffix}"
 
 
 async def create_test_database(db_name: str) -> bool:
@@ -211,7 +215,7 @@ async def create_dual_test_databases(base_name: str) -> tuple[str, str]:
     ohlcv_success = await create_test_database(ohlcv_db_name)
 
     if orm_success and ohlcv_success:
-        print_success(f"Both test databases created successfully")
+        print_success("Both test databases created successfully")
         fullon_logger.info(f"Dual test databases created: orm={orm_db_name}, ohlcv={ohlcv_db_name}")
         return orm_db_name, ohlcv_db_name
     else:
@@ -232,7 +236,7 @@ async def drop_dual_test_databases(orm_db_name: str, ohlcv_db_name: str) -> bool
     ohlcv_success = await drop_test_database(ohlcv_db_name)
 
     if orm_success and ohlcv_success:
-        print_success(f"Both test databases dropped successfully")
+        print_success("Both test databases dropped successfully")
         fullon_logger.info(f"Dual test databases dropped: orm={orm_db_name}, ohlcv={ohlcv_db_name}")
         return True
     else:
@@ -245,16 +249,16 @@ async def database_context_for_test(db_name: str):
     """Context manager for test database lifecycle (following fullon_orm_api pattern)"""
     # Set environment variable for this test database
     original_db_name = os.getenv('DATABASE_URL', '')
-    
+
     # Update DATABASE_URL to point to test database
     host = os.getenv("DB_HOST", "localhost")
     port = int(os.getenv("DB_PORT", "5432"))
     user = os.getenv("DB_USER", "postgres")
     password = os.getenv("DB_PASSWORD", "")
-    
+
     test_db_url = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db_name}"
     os.environ['DATABASE_URL'] = test_db_url
-    
+
     try:
         # Create test database
         if not await create_test_database(db_name):
@@ -277,14 +281,14 @@ async def database_context_for_test(db_name: str):
         print_success("Database schema initialized")
 
         yield db_name
-        
+
     finally:
         # Restore original DATABASE_URL
         if original_db_name:
             os.environ['DATABASE_URL'] = original_db_name
         else:
             os.environ.pop('DATABASE_URL', None)
-        
+
         # Drop test database
         await drop_test_database(db_name)
 
@@ -329,7 +333,7 @@ async def install_demo_data():
                 return False
             # Commit exchange creation before proceeding
             await db.commit()
-            print_success(f"Exchanges created successfully")
+            print_success("Exchanges created successfully")
 
             # Install symbols for all created exchanges
             await install_symbols_for_all_exchanges_internal(db, uid=uid)
@@ -349,7 +353,7 @@ async def install_demo_data():
         return False
 
 
-async def install_admin_user_internal(db: DatabaseContext) -> Optional[int]:
+async def install_admin_user_internal(db: DatabaseContext) -> int | None:
     """Install admin user using provided DatabaseContext and ORM models (fullon_orm pattern)."""
     print_info("Installing admin user...")
 
@@ -383,7 +387,7 @@ async def install_admin_user_internal(db: DatabaseContext) -> Optional[int]:
         return None
 
 
-async def install_exchanges_internal(db: DatabaseContext, uid: int) -> Tuple[Optional[int], Optional[int]]:
+async def install_exchanges_internal(db: DatabaseContext, uid: int) -> tuple[int | None, int | None]:
     """Install exchanges using provided DatabaseContext and ORM models (adapted fullon_orm pattern for 3 exchanges)."""
     print_info("Installing exchanges...")
 
@@ -461,7 +465,7 @@ async def install_symbols_for_all_exchanges_internal(db: DatabaseContext, uid: i
     await install_symbols_internal(db, cat_ex_id=None)  # Pass None since we're doing all exchanges
 
 
-async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]):
+async def install_symbols_internal(db: DatabaseContext, cat_ex_id: int | None):
     """Install symbols using provided DatabaseContext and ORM models (fullon_orm pattern)."""
     print_info("Installing symbols...")
 
@@ -488,7 +492,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: Optional[int]
             {
                 "symbol": "BTC/USDC",
                 "updateframe": "1h",
-                "backtest": 3,
+                "backtest": 1,
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USD",
@@ -770,25 +774,25 @@ async def install_bots_internal(db: DatabaseContext, uid: int, ex_id: int, cat_e
 async def run_examples():
     """Run all ohlcv service examples against demo data"""
     print_header("RUNNING EXAMPLES")
-    
+
     examples_dir = os.path.dirname(__file__)
     examples = [
         'daemon_control.py',
-        'ticker_retrieval.py', 
+        'ticker_retrieval.py',
         'callback_override.py'
     ]
-    
+
     success_count = 0
     total_count = len(examples)
-    
+
     for example in examples:
         example_path = os.path.join(examples_dir, example)
         if not os.path.exists(example_path):
             print_warning(f"Example not found: {example}")
             continue
-            
+
         print_info(f"Running example: {example}")
-        
+
         try:
             # Import and run the example
             # Note: In a real implementation, you'd want to run these as subprocesses
@@ -799,9 +803,9 @@ async def run_examples():
                 stderr=asyncio.subprocess.PIPE,
                 cwd=examples_dir
             )
-            
+
             stdout, stderr = await proc.communicate()
-            
+
             if proc.returncode == 0:
                 print_success(f"Example {example} passed")
                 success_count += 1
@@ -809,10 +813,10 @@ async def run_examples():
                 print_error(f"Example {example} failed")
                 if stderr:
                     print(f"Error: {stderr.decode()}")
-                    
+
         except Exception as e:
             print_error(f"Failed to run example {example}: {e}")
-    
+
     print_info(f"\nExamples completed: {success_count}/{total_count} passed")
     return success_count == total_count
 
@@ -820,29 +824,29 @@ async def run_examples():
 async def setup_demo_environment():
     """Setup demo environment with test database and data"""
     test_db_name = generate_test_db_name()
-    
+
     async with database_context_for_test(test_db_name):
         await install_demo_data()
-        print_success(f"\nDemo environment ready!")
+        print_success("\nDemo environment ready!")
         print_info(f"Test database: {test_db_name}")
         print_info("Use --cleanup when done to remove test database")
-        
+
         return test_db_name
 
 
 async def run_full_demo():
     """Setup, run examples, and cleanup"""
     test_db_name = generate_test_db_name()
-    
+
     async with database_context_for_test(test_db_name):
         await install_demo_data()
         success = await run_examples()
-        
+
         if success:
             print_success("\n🎉 All examples passed!")
         else:
             print_warning("\n⚠️ Some examples failed")
-        
+
         return success
 
 
@@ -852,7 +856,7 @@ async def main():
         description="Demo Data Setup for fullon_ohlcv_service Examples",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument('--setup', action='store_true',
                         help='Create test database and install demo data')
     parser.add_argument('--cleanup', metavar='DB_NAME',
@@ -861,25 +865,25 @@ async def main():
                         help='Setup, run all examples, then cleanup')
     parser.add_argument('--examples-only', action='store_true',
                         help='Run examples against existing database')
-    
+
     args = parser.parse_args()
-    
+
     if args.setup:
         db_name = await setup_demo_environment()
         print_info(f"\nTo cleanup later, run: python {sys.argv[0]} --cleanup {db_name}")
-        
+
     elif args.cleanup:
         success = await drop_test_database(args.cleanup)
         sys.exit(0 if success else 1)
-        
+
     elif args.run_all:
         success = await run_full_demo()
         sys.exit(0 if success else 1)
-        
+
     elif args.examples_only:
         success = await run_examples()
         sys.exit(0 if success else 1)
-        
+
     else:
         parser.print_help()
         sys.exit(1)

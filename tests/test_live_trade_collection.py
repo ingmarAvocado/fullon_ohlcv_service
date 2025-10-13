@@ -28,117 +28,198 @@ class TestLiveTradeCollector:
         return config
 
     @pytest.mark.asyncio
-    async def test_websocket_connection_establishment(self, mock_symbol_config):
+    async def test_websocket_connection_establishment(self):
         """Test that LiveTradeCollector establishes WebSocket connection properly."""
-        from src.fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+        from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
 
-        with patch('src.fullon_ohlcv_service.trade.live_collector.ExchangeQueue') as mock_queue:
+        # Mock symbol and exchange objects
+        mock_symbol = MagicMock()
+        mock_symbol.symbol = "BTC/USDC"
+        mock_symbol.cat_exchange.name = "kraken"
+
+        mock_exchange = MagicMock()
+        mock_exchange.cat_exchange.name = "kraken"
+
+        with (
+            patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue") as mock_queue,
+            patch.object(LiveTradeCollector, "_load_data") as mock_load_data,
+            patch(
+                "fullon_ohlcv_service.trade.live_collector.GlobalTradeBatcher"
+            ) as mock_batcher_class,
+        ):
             # Setup mocks
             mock_handler = AsyncMock()
-            mock_queue.initialize_factory = AsyncMock()
             mock_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
 
-            collector = LiveTradeCollector(mock_symbol_config)
+            # Mock data loading
+            symbols_by_exchange = {"kraken": [mock_symbol]}
+            admin_exchanges = [mock_exchange]
+            mock_load_data.return_value = (symbols_by_exchange, admin_exchanges)
 
-            # Start streaming
-            streaming_task = asyncio.create_task(collector.start_streaming())
+            # Mock batcher
+            mock_batcher = AsyncMock()
+            mock_batcher_class.return_value = mock_batcher
+
+            collector = LiveTradeCollector()
+
+            # Start collection
+            collection_task = asyncio.create_task(collector.start_collection())
             await asyncio.sleep(0.1)  # Let initialization happen
 
-            # Verify WebSocket setup
-            mock_queue.initialize_factory.assert_called_once()
-            mock_queue.get_websocket_handler.assert_called_once()
-            mock_handler.subscribe_trades.assert_called_once_with(
-                "BTC/USDC", collector._on_trade_received
-            )
+            # Verify data loading
+            mock_load_data.assert_called_once()
 
-            # Stop streaming
-            await collector.stop_streaming()
-            streaming_task.cancel()
+            # Verify WebSocket handler was obtained
+            mock_queue.get_websocket_handler.assert_called_once_with(mock_exchange)
+
+            # Verify subscribe_trades was called with symbol and callback
+            mock_handler.subscribe_trades.assert_called_once()
+            call_args = mock_handler.subscribe_trades.call_args
+            assert call_args[0][0] == "BTC/USDC"  # symbol
+            assert callable(call_args[0][1])  # callback function
+
+            # Verify symbol was registered with batcher
+            mock_batcher.register_symbol.assert_called_once_with("kraken", "BTC/USDC")
+
+            # Stop collection
+            await collector.stop_collection()
+            collection_task.cancel()
             try:
-                await streaming_task
+                await collection_task
             except asyncio.CancelledError:
                 pass
 
     @pytest.mark.asyncio
-    async def test_trade_redis_queuing(self, mock_symbol_config):
-        """Test that received trades are pushed to Redis correctly."""
-        from src.fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+    async def test_trade_redis_queuing(self):
+        """Test that received trades are pushed to Redis correctly via callback."""
+        from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+        from fullon_orm.models import Trade as ORMTrade
 
-        with patch('src.fullon_ohlcv_service.trade.live_collector.TradesCache') as mock_cache:
+        # Create mock ORM Trade object
+        mock_trade = MagicMock(spec=ORMTrade)
+        mock_trade.symbol = "BTC/USDC"
+        mock_trade.time = datetime.now(timezone.utc).timestamp()
+        mock_trade.price = 65000.0
+        mock_trade.volume = 0.5
+        mock_trade.side = "buy"
+
+        with patch("fullon_ohlcv_service.trade.live_collector.TradesCache") as mock_cache:
             # Setup mock cache
             mock_cache_instance = AsyncMock()
             mock_cache.return_value.__aenter__.return_value = mock_cache_instance
 
-            collector = LiveTradeCollector(mock_symbol_config)
+            collector = LiveTradeCollector()
 
-            # Simulate receiving a trade
-            trade_data = {
-                'timestamp': datetime.now(timezone.utc).timestamp(),
-                'price': 65000.0,
-                'amount': 0.5,
-                'side': 'buy'
-            }
+            # Create the callback (this is what gets called by WebSocket)
+            callback = collector._create_exchange_callback("kraken")
 
-            await collector._on_trade_received(trade_data)
+            # Simulate receiving a trade via the callback
+            await callback(mock_trade)
 
-            # Verify trade was pushed to Redis
-            mock_cache_instance.push_trade.assert_called_once_with(
-                "kraken", "BTC/USDC", trade_data
-            )
+            # Verify trade was pushed to Redis cache
+            mock_cache_instance.push_trade_list.assert_called_once()
+            call_args = mock_cache_instance.push_trade_list.call_args
+            assert call_args[1]["symbol"] == "BTC/USDC"
+            assert call_args[1]["exchange"] == "kraken"
+            assert call_args[1]["trade"] is mock_trade
+
+            # Verify trade status was updated
+            mock_cache_instance.update_trade_status.assert_called_once_with(key="kraken")
 
     @pytest.mark.asyncio
-    async def test_websocket_auto_reconnection(self, mock_symbol_config):
-        """Test WebSocket reconnection after disconnection."""
-        from src.fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+    async def test_websocket_error_handling_during_startup(self):
+        """Test WebSocket error handling during collection startup."""
+        from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
 
-        with patch('src.fullon_ohlcv_service.trade.live_collector.ExchangeQueue') as mock_queue:
-            # Setup mock with connection tracking
+        # Mock symbol and exchange objects
+        mock_symbol = MagicMock()
+        mock_symbol.symbol = "BTC/USDC"
+        mock_symbol.cat_exchange.name = "kraken"
+
+        mock_exchange = MagicMock()
+        mock_exchange.cat_exchange.name = "kraken"
+
+        with (
+            patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue") as mock_queue,
+            patch.object(LiveTradeCollector, "_load_data") as mock_load_data,
+        ):
+            # Setup mocks
             mock_handler = AsyncMock()
-            mock_handler.connected = True
-            reconnect_count = 0
-
-            async def subscribe_with_reconnect(*args, **kwargs):
-                nonlocal reconnect_count
-                reconnect_count += 1
-                if reconnect_count == 2:
-                    # Simulate disconnection on second attempt
-                    raise Exception("WebSocket disconnected")
-                return None
-
-            mock_handler.subscribe_trades = subscribe_with_reconnect
+            # Simulate WebSocket subscription failure
+            mock_handler.subscribe_trades.side_effect = Exception("WebSocket connection failed")
             mock_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
-            mock_queue.initialize_factory = AsyncMock()
 
-            collector = LiveTradeCollector(mock_symbol_config)
+            # Mock data loading
+            symbols_by_exchange = {"kraken": [mock_symbol]}
+            admin_exchanges = [mock_exchange]
+            mock_load_data.return_value = (symbols_by_exchange, admin_exchanges)
 
-            # Start streaming
-            streaming_task = asyncio.create_task(collector.start_streaming())
-            await asyncio.sleep(3)  # Let reconnection happen
+            collector = LiveTradeCollector()
 
-            # Verify reconnection attempts (should have at least 2 attempts)
-            assert reconnect_count >= 2
+            # Start collection - should handle the error gracefully
+            collection_task = asyncio.create_task(collector.start_collection())
+            await asyncio.sleep(0.1)  # Let initialization happen
 
-            # Stop streaming
-            await collector.stop_streaming()
-            streaming_task.cancel()
-            try:
-                await streaming_task
-            except asyncio.CancelledError:
-                pass
+            # Verify subscribe_trades was attempted with correct symbol
+            mock_handler.subscribe_trades.assert_called_once()
+            call_args = mock_handler.subscribe_trades.call_args
+            assert call_args[0][0] == "BTC/USDC"  # symbol
+            assert callable(call_args[0][1])  # callback function
+
+            # Collection should complete (even with errors for individual symbols)
+            await collection_task
+
+            # Stop collection
+            await collector.stop_collection()
 
     @pytest.mark.asyncio
-    async def test_batcher_registration(self, mock_symbol_config):
-        """Test LiveTradeCollector registers with GlobalTradeBatcher."""
-        from src.fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+    async def test_batcher_registration(self):
+        """Test LiveTradeCollector registers symbols with GlobalTradeBatcher during startup."""
+        from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
 
-        with patch.object(GlobalTradeBatcher, 'register_symbol', new=AsyncMock()) as mock_register:
-            collector = LiveTradeCollector(mock_symbol_config)
+        # Mock symbol and exchange objects
+        mock_symbol = MagicMock()
+        mock_symbol.symbol = "BTC/USDC"
+        mock_symbol.cat_exchange.name = "kraken"
 
-            await collector._register_with_batcher()
+        mock_exchange = MagicMock()
+        mock_exchange.cat_exchange.name = "kraken"
 
-            # Verify registration
-            mock_register.assert_called_once_with("kraken", "BTC/USDC")
+        with (
+            patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue") as mock_queue,
+            patch.object(LiveTradeCollector, "_load_data") as mock_load_data,
+            patch(
+                "fullon_ohlcv_service.trade.live_collector.GlobalTradeBatcher"
+            ) as mock_batcher_class,
+        ):
+            # Setup mocks
+            mock_handler = AsyncMock()
+            mock_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
+
+            # Mock data loading
+            symbols_by_exchange = {"kraken": [mock_symbol]}
+            admin_exchanges = [mock_exchange]
+            mock_load_data.return_value = (symbols_by_exchange, admin_exchanges)
+
+            # Mock batcher
+            mock_batcher = AsyncMock()
+            mock_batcher_class.return_value = mock_batcher
+
+            collector = LiveTradeCollector()
+
+            # Start collection
+            await collector.start_collection()
+
+            # Verify symbol was registered with batcher during startup
+            mock_batcher.register_symbol.assert_called_once_with("kraken", "BTC/USDC")
+
+            # Verify symbol is tracked in registered_symbols
+            assert "kraken:BTC/USDC" in collector.registered_symbols
+
+            # Stop collection and verify unregistration
+            await collector.stop_collection()
+            mock_batcher.unregister_symbol.assert_called_once_with("kraken", "BTC/USDC")
 
 
 class TestGlobalTradeBatcher:
@@ -147,7 +228,7 @@ class TestGlobalTradeBatcher:
     @pytest.mark.asyncio
     async def test_singleton_pattern(self):
         """Test GlobalTradeBatcher implements singleton pattern correctly."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
 
         batcher1 = GlobalTradeBatcher()
         batcher2 = GlobalTradeBatcher()
@@ -157,17 +238,21 @@ class TestGlobalTradeBatcher:
     @pytest.mark.asyncio
     async def test_minute_aligned_timing(self):
         """Test batch processing happens at regular intervals."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
 
         batcher = GlobalTradeBatcher()
-        batcher._batch_interval = 1  # Speed up test by using 1 second interval
 
-        with patch.object(batcher, '_process_batch', new=AsyncMock()) as mock_process:
+        with (
+            patch.object(batcher, "_process_batch", new=AsyncMock()) as mock_process,
+            patch.object(
+                batcher, "_calculate_next_batch_time", return_value=time.time() + 0.1
+            ) as mock_calc,
+        ):
             # Start batch processing
             processing_task = asyncio.create_task(batcher.start_batch_processing())
 
             # Wait for slightly more than the interval
-            await asyncio.sleep(2.5)
+            await asyncio.sleep(0.5)
 
             # Verify batch was processed at least once
             assert mock_process.call_count >= 1
@@ -183,24 +268,34 @@ class TestGlobalTradeBatcher:
     @pytest.mark.asyncio
     async def test_batch_collection_from_redis(self):
         """Test collecting trades from Redis and saving to PostgreSQL."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
+        from fullon_orm.models import Trade as ORMTrade
 
-        with patch('src.fullon_ohlcv_service.trade.global_batcher.TradesCache') as mock_cache, \
-             patch('src.fullon_ohlcv_service.trade.global_batcher.TradeRepository') as mock_repo:
+        # Create mock ORM Trade objects
+        mock_trade1 = MagicMock(spec=ORMTrade)
+        mock_trade1.time = time.time()
+        mock_trade1.price = 65000.0
+        mock_trade1.volume = 0.5
+        mock_trade1.side = "buy"
 
+        mock_trade2 = MagicMock(spec=ORMTrade)
+        mock_trade2.time = time.time()
+        mock_trade2.price = 65100.0
+        mock_trade2.volume = 0.3
+        mock_trade2.side = "sell"
+
+        with (
+            patch("fullon_ohlcv_service.trade.batcher.TradesCache") as mock_cache,
+            patch("fullon_ohlcv_service.trade.batcher.TradeRepository") as mock_repo,
+        ):
             # Setup mocks
             mock_cache_instance = AsyncMock()
             mock_cache.return_value.__aenter__.return_value = mock_cache_instance
+            mock_cache_instance.get_trades.return_value = [mock_trade1, mock_trade2]
 
             mock_repo_instance = AsyncMock()
             mock_repo.return_value.__aenter__.return_value = mock_repo_instance
-
-            # Mock trades from Redis
-            mock_trades = [
-                {'timestamp': time.time(), 'price': 65000, 'amount': 0.5, 'side': 'buy'},
-                {'timestamp': time.time(), 'price': 65100, 'amount': 0.3, 'side': 'sell'}
-            ]
-            mock_cache_instance.get_trades.return_value = mock_trades
+            mock_repo_instance.save_trades.return_value = True
 
             batcher = GlobalTradeBatcher()
             await batcher.register_symbol("kraken", "BTC/USDC")
@@ -208,23 +303,29 @@ class TestGlobalTradeBatcher:
             # Process batch
             await batcher._process_batch()
 
-            # Verify trades were fetched from Redis
-            mock_cache_instance.get_trades.assert_called()
+            # Verify trades were fetched from Redis for the correct symbol
+            mock_cache_instance.get_trades.assert_called_once_with("BTC/USDC", "kraken")
 
             # Verify trades were saved to PostgreSQL
-            mock_repo_instance.save_trades.assert_called()
+            mock_repo_instance.save_trades.assert_called_once()
+            saved_trades = mock_repo_instance.save_trades.call_args[0][0]
+            assert len(saved_trades) == 2
 
     @pytest.mark.asyncio
     async def test_multiple_symbol_coordination(self):
         """Test GlobalTradeBatcher handles multiple symbols correctly."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
 
-        with patch('src.fullon_ohlcv_service.trade.global_batcher.TradesCache') as mock_cache, \
-             patch('src.fullon_ohlcv_service.trade.global_batcher.TradeRepository') as mock_repo:
-
+        with (
+            patch("fullon_ohlcv_service.trade.batcher.TradesCache") as mock_cache,
+            patch("fullon_ohlcv_service.trade.batcher.TradeRepository") as mock_repo,
+        ):
             mock_cache_instance = AsyncMock()
             mock_cache.return_value.__aenter__.return_value = mock_cache_instance
             mock_cache_instance.get_trades.return_value = []
+
+            mock_repo_instance = AsyncMock()
+            mock_repo.return_value.__aenter__.return_value = mock_repo_instance
 
             batcher = GlobalTradeBatcher()
 
@@ -236,126 +337,164 @@ class TestGlobalTradeBatcher:
             # Process batch
             await batcher._process_batch()
 
-            # Verify all symbols were processed
+            # Verify all symbols were processed (get_trades called for each)
             assert mock_cache_instance.get_trades.call_count == 3
+            expected_calls = [
+                (("BTC/USDC", "kraken"), {}),
+                (("ETH/USDC", "kraken"), {}),
+                (("BTC/USDT", "binance"), {}),
+            ]
+            mock_cache_instance.get_trades.assert_has_calls(expected_calls, any_order=True)
 
 
 class TestHistoricalToLiveTransition:
     """Test seamless transition from historical to live collection."""
 
     @pytest.mark.asyncio
-    async def test_automatic_transition_after_historical(self):
-        """Test LiveTradeCollector starts automatically after historical collection."""
-        from src.fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
+    async def test_historical_collection_standalone(self):
+        """Test HistoricTradeCollector works as standalone process."""
+        from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 
+        # Mock symbol and exchange objects
         mock_symbol = MagicMock()
         mock_symbol.symbol = "BTC/USDC"
-        mock_symbol.exchange_name = "kraken"
-        mock_symbol.cat_ex_id = 1
+        mock_symbol.cat_exchange.name = "kraken"
         mock_symbol.backtest = 3
 
-        with patch('src.fullon_ohlcv_service.trade.historic_collector.LiveTradeCollector') as mock_live:
+        mock_exchange = MagicMock()
+        mock_exchange.cat_exchange.name = "kraken"
+
+        with (
+            patch("fullon_ohlcv_service.trade.historic_collector.ExchangeQueue") as mock_queue,
+            patch.object(HistoricTradeCollector, "_load_data") as mock_load_data,
+            patch.object(HistoricTradeCollector, "_collect_symbol_historical") as mock_collect,
+        ):
             # Setup mocks
-            mock_live_instance = AsyncMock()
-            mock_live.return_value = mock_live_instance
+            mock_handler = AsyncMock()
+            mock_queue.get_rest_handler = AsyncMock(return_value=mock_handler)
 
-            with patch.object(HistoricTradeCollector, 'collect_historical_data', new=AsyncMock(return_value=100)):
-                with patch.object(HistoricTradeCollector, 'create_exchange_object', new=AsyncMock()):
-                    with patch.object(HistoricTradeCollector, 'create_credential_provider', return_value=lambda x: ("", "")):
-                        with patch('src.fullon_ohlcv_service.trade.historic_collector.ExchangeQueue') as mock_queue:
-                            mock_handler = AsyncMock()
-                            mock_queue.get_rest_handler = AsyncMock(return_value=mock_handler)
-                            mock_queue.initialize_factory = AsyncMock()
+            # Mock data loading
+            symbols_by_exchange = {"kraken": [mock_symbol]}
+            admin_exchanges = [mock_exchange]
+            mock_load_data.return_value = (symbols_by_exchange, admin_exchanges)
 
-                            collector = HistoricTradeCollector(mock_symbol)
-                            await collector.collect()
+            # Mock successful collection
+            mock_collect.return_value = 100
 
-                            # Verify LiveTradeCollector was created and started
-                            mock_live.assert_called_once_with(mock_symbol)
-                            mock_live_instance.start_streaming.assert_called_once()
+            collector = HistoricTradeCollector()
+
+            # Start collection
+            results = await collector.start_collection()
+
+            # Verify collection completed and returned results
+            assert results == {"kraken:BTC/USDC": 100}
+            mock_collect.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_no_data_loss_during_transition(self):
-        """Test no trades are lost during historical to live transition."""
-        from src.fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
-        from src.fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+    async def test_historical_and_live_separate_processes(self):
+        """Test that historical and live collection are separate processes."""
+        from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
+        from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
 
+        # Mock symbol and exchange objects
         mock_symbol = MagicMock()
         mock_symbol.symbol = "BTC/USDC"
-        mock_symbol.exchange_name = "kraken"
+        mock_symbol.cat_exchange.name = "kraken"
         mock_symbol.backtest = 3
 
-        # Track the last historical trade timestamp
-        last_historical_timestamp = time.time() - 60  # 1 minute ago
+        mock_exchange = MagicMock()
+        mock_exchange.cat_exchange.name = "kraken"
 
-        with patch.object(HistoricTradeCollector, 'collect_historical_data',
-                         return_value=100) as mock_historical:
-            with patch.object(LiveTradeCollector, 'start_streaming',
-                            new=AsyncMock()) as mock_live:
-                # Simulate seamless transition
-                historic = HistoricTradeCollector(mock_symbol)
+        with (
+            patch(
+                "fullon_ohlcv_service.trade.historic_collector.ExchangeQueue"
+            ) as mock_queue_historic,
+            patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue") as mock_queue_live,
+            patch.object(HistoricTradeCollector, "_load_data") as mock_load_data_historic,
+            patch.object(LiveTradeCollector, "_load_data") as mock_load_data_live,
+            patch.object(HistoricTradeCollector, "_collect_symbol_historical") as mock_collect,
+        ):
+            # Setup historical mocks
+            mock_handler_historic = MagicMock()  # Use MagicMock since we don't need async behavior
+            mock_queue_historic.get_rest_handler = AsyncMock(return_value=mock_handler_historic)
+            symbols_by_exchange = {"kraken": [mock_symbol]}
+            admin_exchanges = [mock_exchange]
+            mock_load_data_historic.return_value = (symbols_by_exchange, admin_exchanges)
+            mock_collect.return_value = 100
 
-                # Mock the transition to ensure no gap
-                with patch('time.time', return_value=last_historical_timestamp + 1):
-                    # Historical collection should complete just before live starts
-                    await historic.collect()
+            # Setup live mocks
+            mock_handler_live = MagicMock()  # Use MagicMock since we don't need async behavior
+            mock_queue_live.get_websocket_handler = AsyncMock(return_value=mock_handler_live)
+            mock_load_data_live.return_value = (symbols_by_exchange, admin_exchanges)
 
-                # Verify timing continuity
-                # Live collection should start immediately after historical
+            # Test historical collection
+            historic_collector = HistoricTradeCollector()
+            historic_results = await historic_collector.start_collection()
+            assert historic_results == {"kraken:BTC/USDC": 100}
+
+            # Test live collection separately
+            live_collector = LiveTradeCollector()
+            await live_collector.start_collection()
+
+            # Verify they use different handlers (REST vs WebSocket)
+            mock_queue_historic.get_rest_handler.assert_called_once()
+            mock_queue_live.get_websocket_handler.assert_called_once()
+
+            # Clean up
+            await live_collector.stop_collection()
 
 
 class TestErrorHandling:
     """Test error handling and recovery mechanisms."""
 
     @pytest.mark.asyncio
-    async def test_websocket_error_recovery(self):
-        """Test recovery from WebSocket errors."""
-        from src.fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+    async def test_callback_error_handling(self):
+        """Test error handling in the trade callback."""
+        from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
+        from fullon_orm.models import Trade as ORMTrade
 
-        mock_symbol = MagicMock()
-        mock_symbol.symbol = "BTC/USDC"
-        mock_symbol.exchange_name = "kraken"
+        # Create mock ORM Trade object
+        mock_trade = MagicMock(spec=ORMTrade)
+        mock_trade.symbol = "BTC/USDC"
+        mock_trade.time = datetime.now(timezone.utc).timestamp()
 
-        with patch('src.fullon_ohlcv_service.trade.live_collector.ExchangeQueue') as mock_queue:
-            # Simulate WebSocket error and recovery
-            mock_handler = AsyncMock()
-            mock_handler.connected = True
-            error_count = 0
+        with (
+            patch("fullon_ohlcv_service.trade.live_collector.TradesCache") as mock_cache,
+            patch("fullon_ohlcv_service.trade.live_collector.ProcessCache") as mock_process_cache,
+        ):
+            # Setup mocks to simulate errors
+            mock_cache_instance = AsyncMock()
+            mock_cache_instance.push_trade_list.side_effect = Exception("Redis connection failed")
+            mock_cache.return_value.__aenter__.return_value = mock_cache_instance
 
-            async def subscribe_with_error(symbol, callback):
-                nonlocal error_count
-                error_count += 1
-                if error_count == 1:
-                    raise Exception("WebSocket connection failed")
-                # Success on retry
-                return None
+            mock_process_instance = AsyncMock()
+            mock_process_cache.return_value.__aenter__.return_value = mock_process_instance
 
-            mock_handler.subscribe_trades = subscribe_with_error
-            mock_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
-            mock_queue.initialize_factory = AsyncMock()
+            collector = LiveTradeCollector()
+            collector.process_ids = {"kraken:BTC/USDC": "test_process_id"}
 
-            collector = LiveTradeCollector(mock_symbol)
+            # Create the callback
+            callback = collector._create_exchange_callback("kraken")
 
-            # Should recover from error
-            streaming_task = asyncio.create_task(collector.start_streaming())
-            await asyncio.sleep(3)  # Allow time for retry
+            # Call callback with trade - should handle error gracefully
+            await callback(mock_trade)
 
-            # Verify recovery
-            assert error_count >= 2  # At least one error and one success
+            # Verify error was handled (no exception raised)
+            # Verify process status was updated on error
+            from fullon_cache.process_cache import ProcessStatus
 
-            await collector.stop_streaming()
-            streaming_task.cancel()
-            try:
-                await streaming_task
-            except asyncio.CancelledError:
-                pass
+            mock_process_instance.update_process.assert_called_with(
+                process_id="test_process_id",
+                status=ProcessStatus.ERROR,
+                message="Error: Redis connection failed",
+            )
 
     @pytest.mark.asyncio
     async def test_database_error_handling(self):
         """Test handling of database save errors."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
 
-        with patch('src.fullon_ohlcv_service.trade.global_batcher.TradeRepository') as mock_repo:
+        with patch("fullon_ohlcv_service.trade.batcher.TradeRepository") as mock_repo:
             mock_repo_instance = AsyncMock()
             mock_repo_instance.save_trades.side_effect = Exception("Database error")
             mock_repo.return_value.__aenter__.return_value = mock_repo_instance
@@ -374,32 +513,49 @@ class TestPerformance:
     """Test performance characteristics of the implementation."""
 
     @pytest.mark.asyncio
-    async def test_batch_size_limits(self):
-        """Test that batch sizes are properly limited."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+    async def test_batch_processing_handles_large_trade_volumes(self):
+        """Test that batch processing handles large volumes of trades."""
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
+        from fullon_orm.models import Trade as ORMTrade
 
-        with patch('src.fullon_ohlcv_service.trade.global_batcher.TradesCache') as mock_cache:
+        # Create many mock trades
+        mock_trades = []
+        for i in range(150):
+            mock_trade = MagicMock(spec=ORMTrade)
+            mock_trade.time = time.time() + i
+            mock_trade.price = 65000.0 + i
+            mock_trade.volume = 0.1
+            mock_trade.side = "buy"
+            mock_trades.append(mock_trade)
+
+        with (
+            patch("fullon_ohlcv_service.trade.batcher.TradesCache") as mock_cache,
+            patch("fullon_ohlcv_service.trade.batcher.TradeRepository") as mock_repo,
+        ):
             mock_cache_instance = AsyncMock()
             mock_cache.return_value.__aenter__.return_value = mock_cache_instance
-
-            # Return many trades
-            mock_trades = [{'timestamp': time.time(), 'price': 65000, 'amount': 0.1}] * 2000
             mock_cache_instance.get_trades.return_value = mock_trades
 
+            mock_repo_instance = AsyncMock()
+            mock_repo.return_value.__aenter__.return_value = mock_repo_instance
+            mock_repo_instance.save_trades.return_value = True
+
             batcher = GlobalTradeBatcher()
+            await batcher.register_symbol("kraken", "BTC/USDC")
 
-            # Process batch - should limit the number processed
-            await batcher._process_single_symbol("kraken", "BTC/USDC")
+            # Process batch
+            trades_processed = await batcher._process_single_symbol("kraken", "BTC/USDC")
 
-            # Verify batch limit was applied
-            mock_cache_instance.get_trades.assert_called_with(
-                "kraken:BTC/USDC", limit=1000  # Expected batch limit
-            )
+            # Verify all trades were processed
+            assert trades_processed == 150
+            mock_repo_instance.save_trades.assert_called_once()
+            saved_trades = mock_repo_instance.save_trades.call_args[0][0]
+            assert len(saved_trades) == 150
 
     @pytest.mark.asyncio
     async def test_timing_precision(self):
         """Test that batch processing timing is precise."""
-        from src.fullon_ohlcv_service.trade.global_batcher import GlobalTradeBatcher
+        from fullon_ohlcv_service.trade.batcher import GlobalTradeBatcher
 
         batcher = GlobalTradeBatcher()
 

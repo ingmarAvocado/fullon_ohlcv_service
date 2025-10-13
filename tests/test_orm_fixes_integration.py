@@ -86,9 +86,9 @@ async def test_trade_collector_volume_field():
     print("\n2. Testing TradeCollector volume field handling...")
 
     # Import after mocking is set up
-    from fullon_ohlcv_service.trade.collector import TradeCollector
+    from fullon_ohlcv_service.trade.live_collector import LiveTradeCollector
 
-    collector = TradeCollector("kraken", "BTC/USD")
+    collector = LiveTradeCollector()
 
     # Test that collector can process trades with 'amount' field
     raw_trade_amount = {"timestamp": 1234567890, "price": 50000, "amount": 0.5, "side": "buy"}
@@ -122,7 +122,7 @@ async def test_historic_collector_exchange_lookup():
         # Import and test
         from fullon_ohlcv_service.trade.historic_collector import HistoricTradeCollector
 
-        collector = HistoricTradeCollector("kraken", symbol_obj)
+        collector = HistoricTradeCollector([symbol_obj])
 
         # Test exchange lookup logic
         exchanges = mock_db.exchanges.get_user_exchanges.return_value
@@ -158,11 +158,11 @@ async def test_ohlcv_collector_patterns():
 
         from fullon_ohlcv_service.ohlcv.historic_collector import HistoricOHLCVCollector
 
-        collector = HistoricOHLCVCollector("kraken", symbol_obj)
+        collector = HistoricOHLCVCollector([symbol_obj])
 
         # Verify it can be instantiated with correct patterns
-        assert collector.exchange == "kraken"
-        assert collector.symbol_obj.symbol == "BTC/USD"
+        assert len(collector.symbols) == 1
+        assert collector.symbols[0].symbol == "BTC/USD"
         print("   ✅ OHLCV collectors handle ORM patterns correctly")
 
 

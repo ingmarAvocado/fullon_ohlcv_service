@@ -13,7 +13,7 @@ import asyncio
 import contextlib
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # Load environment variables from .env file
@@ -42,9 +42,10 @@ os.environ["DB_OHLCV_NAME"] = test_db_ohlcv
 
 # Now safe to import modules
 from demo_data import create_dual_test_databases, drop_dual_test_databases, install_demo_data
-from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 from fullon_log import get_component_logger
 from fullon_orm import DatabaseContext, init_db
+
+from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 
 logger = get_component_logger("fullon.pipeline.test")
 
@@ -91,7 +92,7 @@ async def run_pipeline():
         print("📊 Phase 2: Running live collection until end of next minute + 1ms...")
 
         # Calculate time to run until end of next minute + 1ms
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         next_minute_end = (now + timedelta(minutes=1)).replace(second=0, microsecond=0) + timedelta(
             milliseconds=1
         )
@@ -137,8 +138,8 @@ async def check_pipeline_results():
         print(f"Found {len(all_symbols)} symbols in database")
 
         # Check OHLCV data for a few symbols
-        from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
         import arrow
+        from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 
         checked_symbols = 0
         total_candles = 0
@@ -150,7 +151,7 @@ async def check_pipeline_results():
             try:
                 async with TimeseriesRepository(exchange_name, symbol_str, test=False) as repo:
                     # Check recent candles
-                    end_time = datetime.now(timezone.utc)
+                    end_time = datetime.now(UTC)
                     start_time = end_time - timedelta(minutes=15)
 
                     ohlcv_data = await repo.fetch_ohlcv(

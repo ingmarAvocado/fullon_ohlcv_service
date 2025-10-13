@@ -6,20 +6,16 @@ Provides utilities to initialize database symbols for OHLCV repositories.
 This ensures symbols are ready for data operations without manual init_symbol() calls.
 """
 
-import asyncio
-from typing import Optional
-from fullon_ohlcv.repositories.ohlcv import TradeRepository, CandleRepository, TimeseriesRepository
-from fullon_orm import DatabaseContext
 from fullon_log import get_component_logger
+from fullon_ohlcv.repositories.ohlcv.base_repository import OHLCVBaseRepository
+from fullon_orm import DatabaseContext
 
 logger = get_component_logger("fullon.ohlcv.utils.add_symbols")
 
 
 async def add_symbol(
     exchange: str,
-    symbol: str,
-    main: str = "view",
-    test: bool = True
+    symbol: str
 ) -> bool:
     """
     Initialize a single symbol for OHLCV operations.
@@ -27,8 +23,6 @@ async def add_symbol(
     Args:
         exchange: Exchange name (e.g., 'binance', 'kraken')
         symbol: Symbol name (e.g., 'BTC/USDT', 'ETH/USD')
-        main: Main source for OHLCV data ('view', 'candles', or 'trades')
-        test: Whether to use test database
 
     Returns:
         bool: True if initialization successful, False otherwise
@@ -36,20 +30,8 @@ async def add_symbol(
     try:
         logger.info(f"Initializing symbol {exchange}:{symbol}'")
 
-        # Determine which repository to use based on main parameter
-        if main == "candles":
-            repo_class = CandleRepository
-        else:
-            # For 'view' and 'trades', use TradeRepository
-            repo_class = TradeRepository
-
-        # Initialize the symbol
-        async with repo_class(exchange, symbol, test=test) as repo:
-            try:
-                success = await repo.init_symbol()
-            except Exception as e:
-                logger.warning(f"Symbol initialization failed, but continuing: {e}")
-                success = True  # Consider it successful if table creation worked but hypertable failed
+        async with OHLCVBaseRepository(exchange, symbol) as repo:
+            success = await repo.init_symbol()
 
         if success:
             logger.info(f"Successfully initialized symbol {exchange}:{symbol}")
@@ -64,11 +46,7 @@ async def add_symbol(
 
 
 async def add_all_symbols(
-    symbols: Optional[list] = None,
-    main: str = "view",
-    test: bool = True,
-    limit: Optional[int] = None,
-    database_url: Optional[str] = None
+    symbols: list | None = None,
 ) -> bool:
     """
     Initialize all symbols from the database for OHLCV operations.
@@ -78,21 +56,17 @@ async def add_all_symbols(
 
     Args:
         symbols: Optional list of symbols to initialize. If None, loads from database.
-        main: Main source for OHLCV data ('view', 'candles', or 'trades')
-        test: Whether to use test database
-        limit: Optional limit on number of symbols to initialize (for testing)
-        database_url: Optional database URL to use for symbol reading
 
     Returns:
         bool: True if all symbols initialized successfully, False if any failed
     """
     try:
-        logger.info(f"Starting initialization of all symbols with main='{main}'")
+        logger.info(f"Starting initialization of all symbols ")
 
         if symbols is None:
             # Load symbols from database
             async with DatabaseContext() as db:
-                symbols = await db.symbols.get_all(limit=limit)
+                symbols = await db.symbols.get_all()
 
         if not symbols:
             logger.warning("No symbols found")
@@ -112,9 +86,7 @@ async def add_all_symbols(
 
             success = await add_symbol(
                 exchange=exchange_name,
-                symbol=symbol_name,
-                main=main,
-                test=test
+                symbol=symbol_name
             )
 
             if success:
@@ -133,8 +105,6 @@ async def add_all_symbols(
 
 async def add_symbols_for_exchange(
     exchange: str,
-    main: str = "view",
-    test: bool = True
 ) -> bool:
     """
     Initialize all symbols for a specific exchange.
@@ -164,9 +134,7 @@ async def add_symbols_for_exchange(
             for symbol in symbols:
                 success = await add_symbol(
                     exchange=exchange,
-                    symbol=symbol.symbol,
-                    main=main,
-                    test=test
+                    symbol=symbol.symbol
                 )
 
                 if success:

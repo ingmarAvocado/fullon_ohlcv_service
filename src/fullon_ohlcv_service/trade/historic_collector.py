@@ -8,16 +8,16 @@ and stores it in the database using symbol backtest periods.
 
 import asyncio
 import os
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from datetime import UTC, datetime, timedelta
 
+from fullon_cache import ProcessCache
+from fullon_cache.process_cache import ProcessStatus, ProcessType
 from fullon_exchange.queue import ExchangeQueue
 from fullon_log import get_component_logger
 from fullon_ohlcv.models import Trade
 from fullon_ohlcv.repositories.ohlcv import TradeRepository
 from fullon_orm import DatabaseContext
-from fullon_orm.models import Symbol, Exchange
-from fullon_ohlcv_service.utils.add_symbols import add_all_symbols
+from fullon_orm.models import Exchange, Symbol
 
 
 logger = get_component_logger("fullon.trade.historic")
@@ -54,10 +54,11 @@ class HistoricTradeCollector:
     exchanges and symbols using database-driven configuration.
     """
 
-    def __init__(self):
+    def __init__(self, symbols: list | None = None):
+        self.symbols = symbols or []
         self.running = False
 
-    async def start_collection(self) -> Dict[str, int]:
+    async def start_collection(self) -> dict[str, int]:
         """
         Start historical collection for all configured symbols.
 
@@ -74,9 +75,6 @@ class HistoricTradeCollector:
         results = {}
 
         try:
-            # Initialize ExchangeQueue factory
-            await ExchangeQueue.initialize_factory()
-
             # Load symbols and admin exchanges
             symbols_by_exchange, admin_exchanges = await self._load_data()
 
@@ -112,8 +110,6 @@ class HistoricTradeCollector:
         except Exception as e:
             logger.error("Error in historical collection orchestration", error=str(e))
             raise
-        finally:
-            await self._cleanup()
 
         total_trades = sum(results.values())
         logger.info(
@@ -122,8 +118,42 @@ class HistoricTradeCollector:
 
         return results
 
-    async def _load_data(self) -> tuple[Dict[str, List[Symbol]], List[Exchange]]:
-        """Load symbols and admin exchanges from database."""
+    async def start_symbol(self, symbol: Symbol) -> int:
+        """Start historic collection for a specific symbol.
+
+        Args:
+            symbol: Symbol to collect data for
+
+        Returns:
+            Number of trades collected
+
+        Raises:
+            ValueError: If admin exchange not found
+        """
+        from ..utils.admin_helper import get_admin_exchanges
+
+        # Get admin exchanges
+        _, admin_exchanges = await get_admin_exchanges()
+
+        # Find admin exchange for this symbol
+        admin_exchange = None
+        for exchange in admin_exchanges:
+            if exchange.cat_exchange.name == symbol.cat_exchange.name:
+                admin_exchange = exchange
+                break
+
+        if not admin_exchange:
+            raise ValueError(f"Admin exchange {symbol.cat_exchange.name} not found")
+
+        # Call _start_exchange_historic_collector with single symbol
+        results = await self._start_exchange_historic_collector(admin_exchange, [symbol])
+
+        # Return count for this symbol
+        symbol_key = f"{symbol.cat_exchange.name}:{symbol.symbol}"
+        return results.get(symbol_key, 0)
+
+    async def _load_data(self) -> tuple[dict[str, list[Symbol]], list[Exchange]]:
+        """Load admin exchanges and group symbols by exchange."""
         admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
 
         async with DatabaseContext() as db:
@@ -132,40 +162,27 @@ class HistoricTradeCollector:
             if not admin_uid:
                 raise ValueError(f"Admin user {admin_email} not found")
 
-            # Load symbols and exchanges
-            all_symbols = await db.symbols.get_all()
+            # Load exchanges (symbols are already provided)
             admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
+            self.symbols = await db.symbols.get_all()
 
-            logger.info(f"Loaded {len(all_symbols)} symbols from database")
+        logger.info(
+            "Loaded data", symbol_count=len(self.symbols), exchange_count=len(admin_exchanges)
+        )
 
-            # Initialize OHLCV symbols for this collector
-            if all_symbols:
-                try:
-                    success = await add_all_symbols(
-                        symbols=all_symbols,
-                        main="view",
-                        test=False
-                    )
-                    if success:
-                        logger.info(f"Initialized {len(all_symbols)} OHLCV symbols")
-                    else:
-                        logger.warning("Some OHLCV symbols failed to initialize")
-                except Exception as e:
-                    logger.error(f"OHLCV symbol initialization failed: {e}")
+        # Group symbols by exchange
+        symbols_by_exchange = {}
+        for symbol in self.symbols:
+            exchange_name = symbol.cat_exchange.name
+            if exchange_name not in symbols_by_exchange:
+                symbols_by_exchange[exchange_name] = []
+            symbols_by_exchange[exchange_name].append(symbol)
 
-            # Group symbols by exchange
-            symbols_by_exchange = {}
-            for symbol in all_symbols:
-                exchange_name = symbol.cat_exchange.name
-                if exchange_name not in symbols_by_exchange:
-                    symbols_by_exchange[exchange_name] = []
-                symbols_by_exchange[exchange_name].append(symbol)
-
-            return symbols_by_exchange, admin_exchanges
+        return symbols_by_exchange, admin_exchanges
 
     async def _start_exchange_historic_collector(
-        self, exchange_obj: Exchange, symbols: List[Symbol]
-    ) -> Dict[str, int]:
+        self, exchange_obj: Exchange, symbols: list[Symbol]
+    ) -> dict[str, int]:
         """Collect historical data for all symbols in one exchange."""
         exchange_name = exchange_obj.cat_exchange.name
         results = {}
@@ -175,13 +192,6 @@ class HistoricTradeCollector:
             exchange=exchange_name,
             symbol_count=len(symbols),
         )
-
-        # Ensure ExchangeQueue factory is initialized
-        try:
-            await ExchangeQueue.initialize_factory()
-        except RuntimeError:
-            # Already initialized - this is fine
-            pass
 
         # Get REST handler
         try:
@@ -205,14 +215,14 @@ class HistoricTradeCollector:
             logger.info(
                 "Exchange has native OHLCV support - skipping trade collection",
                 exchange=exchange_name,
-                symbol_count=len(symbols)
+                symbol_count=len(symbols),
             )
             return results
 
         logger.info(
             "Exchange requires trade collection for OHLCV",
             exchange=exchange_name,
-            symbol_count=len(symbols)
+            symbol_count=len(symbols),
         )
 
         # Collect for all symbols in parallel
@@ -248,11 +258,21 @@ class HistoricTradeCollector:
         exchange_name = symbol.cat_exchange.name
         symbol_str = symbol.symbol
 
+        # Register process
+        async with ProcessCache() as cache:
+            process_id = await cache.register_process(
+                process_type=ProcessType.OHLCV,  # Note: using OHLCV type for trade collection too
+                component=f"{exchange_name}:{symbol_str}",
+                params={"exchange": exchange_name, "symbol": symbol_str, "type": "historic_trade"},
+                message="Starting historic trade collection",
+                status=ProcessStatus.STARTING,
+            )
+
         # Calculate time range
         start_timestamp = int(
-            (datetime.now(timezone.utc) - timedelta(days=symbol.backtest)).timestamp() * 1000
+            (datetime.now(UTC) - timedelta(days=symbol.backtest)).timestamp() * 1000
         )
-        current_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+        current_timestamp = int(datetime.now(UTC).timestamp() * 1000)
 
         total_trades = 0
         since_timestamp = start_timestamp
@@ -264,63 +284,94 @@ class HistoricTradeCollector:
             start_timestamp=start_timestamp,
         )
 
-        while since_timestamp < current_timestamp:
-            try:
-                # Get batch of trades
-                since_seconds = since_timestamp / 1000
-                batch_trades = await handler.get_public_trades(
-                    symbol_str, since=since_seconds, limit=1000
-                )
+        # Update status to running
+        async with ProcessCache() as cache:
+            await cache.update_process(
+                process_id=process_id,
+                status=ProcessStatus.RUNNING,
+                message="Collecting historical trade data",
+            )
 
-                # Filter out None values that may be returned by the API
-                batch_trades = [t for t in batch_trades if t is not None]
-
-                if not batch_trades:
-                    logger.debug("No more trades available", symbol=f"{exchange_name}:{symbol_str}")
-                    break
-
-                # Convert and save batch
-                trades = self._convert_to_trade_objects(batch_trades)
-                async with TradeRepository(exchange_name, symbol_str, test=False) as repo:
-                    success = await repo.save_trades(trades)
-                    if success:
-                        total_trades += len(trades)
-
-                # Advance timestamp
-                if batch_trades:
-                    last_trade = batch_trades[-1]
-                    last_timestamp = self._extract_timestamp(last_trade)
-                    if last_timestamp > 1e12:  # milliseconds
-                        last_timestamp_sec = last_timestamp / 1000
-                    else:
-                        last_timestamp_sec = last_timestamp
-
-                    # Calculate time remaining
-                    current_time_sec = current_timestamp / 1000
-                    time_remaining_sec = current_time_sec - last_timestamp_sec
-
-                    # Log progress with time range
-                    from_time = datetime.fromtimestamp(since_seconds, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-                    to_time = datetime.fromtimestamp(last_timestamp_sec, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-
-                    logger.info(
-                        f"Retrieved {len(batch_trades)} trades for {symbol_str}:{exchange_name} "
-                        f"from {from_time} to {to_time}. "
-                        f"{_format_time_remaining(time_remaining_sec)} left"
+        try:
+            while since_timestamp < current_timestamp:
+                try:
+                    # Get batch of trades
+                    since_seconds = since_timestamp / 1000
+                    batch_trades = await handler.get_public_trades(
+                        symbol_str, since=since_seconds, limit=1000
                     )
 
-                    since_timestamp = int((last_timestamp_sec + 1) * 1000)
+                    # Filter out None values that may be returned by the API
+                    batch_trades = [t for t in batch_trades if t is not None]
 
-                # Rate limiting
-                await asyncio.sleep(0.1)
+                    if not batch_trades:
+                        logger.debug(
+                            "No more trades available", symbol=f"{exchange_name}:{symbol_str}"
+                        )
+                        break
 
-            except Exception as e:
-                logger.error(
-                    "Error collecting batch for symbol",
-                    symbol=f"{exchange_name}:{symbol_str}",
-                    error=str(e),
+                    # Convert and save batch
+                    trades = self._convert_to_trade_objects(batch_trades)
+                    async with TradeRepository(exchange_name, symbol_str, test=False) as repo:
+                        success = await repo.save_trades(trades)
+                        if success:
+                            total_trades += len(trades)
+
+                    # Advance timestamp
+                    if batch_trades:
+                        last_trade = batch_trades[-1]
+                        last_timestamp = self._extract_timestamp(last_trade)
+                        if last_timestamp > 1e12:  # milliseconds
+                            last_timestamp_sec = last_timestamp / 1000
+                        else:
+                            last_timestamp_sec = last_timestamp
+
+                        # Calculate time remaining
+                        current_time_sec = current_timestamp / 1000
+                        time_remaining_sec = current_time_sec - last_timestamp_sec
+
+                        # Log progress with time range
+                        from_time = datetime.fromtimestamp(since_seconds, tz=UTC).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                        to_time = datetime.fromtimestamp(last_timestamp_sec, tz=UTC).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+
+                        logger.info(
+                            f"Retrieved {len(batch_trades)} trades for {symbol_str}:{exchange_name} "
+                            f"from {from_time} to {to_time}. "
+                            f"{_format_time_remaining(time_remaining_sec)} left"
+                        )
+
+                        since_timestamp = int((last_timestamp_sec + 1) * 1000)
+
+                    # Rate limiting
+                    await asyncio.sleep(0.1)
+
+                except Exception as e:
+                    logger.error(
+                        "Error collecting batch for symbol",
+                        symbol=f"{exchange_name}:{symbol_str}",
+                        error=str(e),
+                    )
+                    raise  # Re-raise to update status to ERROR
+
+            # Update process status on completion
+            async with ProcessCache() as cache:
+                await cache.update_process(
+                    process_id=process_id,
+                    status=ProcessStatus.STOPPED,
+                    message=f"Collected {total_trades} trades",
                 )
-                break
+
+        except Exception as e:
+            # Update process status on error
+            async with ProcessCache() as cache:
+                await cache.update_process(
+                    process_id=process_id, status=ProcessStatus.ERROR, message=f"Error: {str(e)}"
+                )
+            raise
 
         logger.debug(
             "Collection completed for symbol",
@@ -336,7 +387,7 @@ class HistoricTradeCollector:
             return trade.get("timestamp", trade.get("datetime", 0))
         return getattr(trade, "timestamp", getattr(trade, "datetime", 0))
 
-    def _convert_to_trade_objects(self, raw_trades: List) -> List[Trade]:
+    def _convert_to_trade_objects(self, raw_trades: list) -> list[Trade]:
         """Convert raw trades to Trade objects."""
         trade_objects = []
 
@@ -356,27 +407,20 @@ class HistoricTradeCollector:
 
                 # Convert timestamp to datetime
                 timestamp_dt = datetime.fromtimestamp(
-                    timestamp / 1000 if timestamp > 1e12 else timestamp,
-                    tz=timezone.utc
+                    timestamp / 1000 if timestamp > 1e12 else timestamp, tz=UTC
                 )
 
-                trade_objects.append(Trade(
-                    timestamp=timestamp_dt,
-                    price=float(price),
-                    volume=float(amount),
-                    side=str(side),
-                    type="market",
-                ))
+                trade_objects.append(
+                    Trade(
+                        timestamp=timestamp_dt,
+                        price=float(price),
+                        volume=float(amount),
+                        side=str(side),
+                        type="market",
+                    )
+                )
             except Exception as e:
                 logger.warning("Failed to convert trade", error=str(e))
                 continue
 
         return trade_objects
-
-    async def _cleanup(self):
-        """Clean up resources."""
-        self.running = False
-        try:
-            await ExchangeQueue.shutdown_factory()
-        except Exception as e:
-            logger.error("Error shutting down ExchangeQueue", error=str(e))

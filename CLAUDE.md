@@ -83,19 +83,31 @@ logger.info("OHLCV collected", symbol="BTC/USD", count=100)
 fullon_ohlcv_service/
 ├── src/fullon_ohlcv_service/
 │   ├── ohlcv/
-│   │   ├── collector.py    # OhlcvCollector - REST-based OHLCV collection (~163 lines)
-│   │   └── manager.py      # OhlcvManager - Coordinate multiple collectors (~138 lines)
+│   │   ├── live_collector.py      # LiveOHLCVCollector - WebSocket OHLCV streaming
+│   │   └── historic_collector.py  # HistoricOHLCVCollector - REST-based historic OHLCV
 │   ├── trade/
-│   │   ├── collector.py    # TradeCollector - WebSocket trade streaming (~427 lines)
+│   │   ├── live_collector.py      # LiveTradeCollector - WebSocket trade streaming
+│   │   ├── historic_collector.py  # HistoricTradeCollector - REST-based historic trades
+│   │   └── batcher.py             # GlobalTradeBatcher - Redis batch processing
 │   ├── config/
-│   │   ├── settings.py     # Configuration management (~33 lines)
-│   │   └── database_config.py # Database-driven configuration (~95 lines)
-│   ├── daemon.py           # Main service daemon (~180 lines)
+│   │   ├── settings.py            # Configuration management
+│   │   └── database_config.py     # Database-driven configuration
+│   ├── daemon.py                  # Main service daemon coordinator
 │   └── utils/
-│       └── process_cache.py # Process health monitoring (~11 lines)
+│       └── add_symbols.py         # Symbol initialization utilities
 ```
 
-**Current Implementation: ~1,100 lines total** (Foundation complete, ready for optimization)
+**Current Implementation Files:**
+- `ohlcv/live_collector.py` - WebSocket OHLCV streaming
+- `ohlcv/historic_collector.py` - REST-based historic OHLCV collection
+- `trade/live_collector.py` - WebSocket trade streaming
+- `trade/historic_collector.py` - REST-based historic trade collection
+- `trade/batcher.py` - Redis batch processing for trades
+- `config/settings.py` - Configuration management
+- `config/database_config.py` - Database-driven configuration
+- `daemon.py` - Main service coordinator
+
+**Total: ~1,600 lines** (Foundation complete, ready for optimization)
 
 ## 4. Simple Integration Patterns (Using fullon Libraries)
 

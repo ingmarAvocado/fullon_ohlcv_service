@@ -6,7 +6,6 @@ Implements clean fullon ecosystem integration patterns.
 """
 
 import asyncio
-import os
 
 from fullon_cache import ProcessCache, TradesCache
 from fullon_cache.process_cache import ProcessStatus, ProcessType
@@ -15,6 +14,7 @@ from fullon_log import get_component_logger
 from fullon_orm import DatabaseContext
 from fullon_orm.models import Exchange, Symbol
 
+from ..utils.admin_helper import get_admin_exchanges
 from .batcher import GlobalTradeBatcher
 
 logger = get_component_logger("fullon.trade.live")
@@ -82,16 +82,11 @@ class LiveTradeCollector:
 
     async def _load_data(self) -> tuple[dict[str, list[Symbol]], list[Exchange]]:
         """Load admin exchanges and group symbols by exchange."""
-        admin_email = os.getenv("ADMIN_MAIL", "admin@fullon")
+        # Use shared admin helper
+        admin_uid, admin_exchanges = await get_admin_exchanges()
 
+        # Load all symbols
         async with DatabaseContext() as db:
-            # Get admin user
-            admin_uid = await db.users.get_user_id(admin_email)
-            if not admin_uid:
-                raise ValueError(f"Admin user {admin_email} not found")
-
-            # Load exchanges (symbols are already provided)
-            admin_exchanges = await db.exchanges.get_user_exchanges(admin_uid)
             self.symbols = await db.symbols.get_all()
 
         logger.info(
@@ -232,3 +227,118 @@ class LiveTradeCollector:
                         )
 
         return trade_callback
+
+    def is_collecting(self, symbol: Symbol) -> bool:
+        """Check if symbol is currently being collected.
+
+        Args:
+            symbol: Symbol to check
+
+        Returns:
+            True if symbol is being collected, False otherwise
+        """
+        symbol_key = f"{symbol.cat_exchange.name}:{symbol.symbol}"
+        return symbol_key in self.registered_symbols
+
+    async def add_symbol(self, symbol: Symbol) -> None:
+        """Add symbol dynamically to running collector.
+
+        Reuses existing WebSocket handler if available for the exchange,
+        otherwise creates new handler.
+
+        Args:
+            symbol: Symbol to add
+
+        Raises:
+            RuntimeError: If collector is not running
+            ValueError: If admin exchange not found
+        """
+        if not self.running:
+            raise RuntimeError("Collector not running - call start_collection() first")
+
+        exchange_name = symbol.cat_exchange.name
+        symbol_key = f"{exchange_name}:{symbol.symbol}"
+
+        # Check if already collecting
+        if symbol_key in self.registered_symbols:
+            logger.info("Symbol already collecting", symbol_key=symbol_key)
+            return
+
+        # Get admin exchanges
+        _, admin_exchanges = await get_admin_exchanges()
+
+        # Find admin exchange for this symbol
+        admin_exchange = None
+        for exchange in admin_exchanges:
+            if exchange.cat_exchange.name == exchange_name:
+                admin_exchange = exchange
+                break
+
+        if not admin_exchange:
+            raise ValueError(f"Admin exchange {exchange_name} not found")
+
+        # Check if handler exists for this exchange
+        if exchange_name in self.websocket_handlers:
+            # Reuse existing handler
+            logger.info("Reusing existing handler", exchange=exchange_name, symbol=symbol.symbol)
+            handler = self.websocket_handlers[exchange_name]
+
+            # Register process for this symbol
+            async with ProcessCache() as cache:
+                process_id = await cache.register_process(
+                    process_type=ProcessType.OHLCV,
+                    component=symbol_key,
+                    params={
+                        "exchange": exchange_name,
+                        "symbol": symbol.symbol,
+                        "type": "live_trade",
+                    },
+                    message="Starting live trade collection",
+                    status=ProcessStatus.STARTING,
+                )
+            self.process_ids[symbol_key] = process_id
+
+            # Subscribe to trades for this symbol
+            callback = self._create_exchange_callback(exchange_name)
+            await handler.subscribe_trades(symbol.symbol, callback)
+
+            # Register with batcher
+            batcher = GlobalTradeBatcher()
+            await batcher.register_symbol(exchange_name, symbol.symbol)
+
+            # Update state
+            self.registered_symbols.add(symbol_key)
+            self.symbols.append(symbol)
+
+            logger.info("Added symbol to collector", symbol=symbol.symbol, exchange=exchange_name)
+        else:
+            # No handler yet, create new one for this exchange
+            logger.info("Creating new handler", exchange=exchange_name, symbol=symbol.symbol)
+            await self._start_exchange_collector(admin_exchange, [symbol])
+
+    async def start_symbol(self, symbol: Symbol) -> None:
+        """Start live collection for a specific symbol.
+
+        Simple method that gets admin exchange and calls _start_exchange_collector.
+
+        Args:
+            symbol: Symbol to start collecting
+
+        Raises:
+            ValueError: If admin exchange not found
+        """
+        # Get admin exchanges
+        _, admin_exchanges = await get_admin_exchanges()
+
+        # Find admin exchange for this symbol
+        admin_exchange = None
+        for exchange in admin_exchanges:
+            if exchange.cat_exchange.name == symbol.cat_exchange.name:
+                admin_exchange = exchange
+                break
+
+        if not admin_exchange:
+            raise ValueError(f"Admin exchange {symbol.cat_exchange.name} not found")
+
+        # Let _start_exchange_collector handle everything
+        await self._start_exchange_collector(admin_exchange, [symbol])

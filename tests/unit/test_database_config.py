@@ -11,15 +11,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 @pytest.fixture
 def mock_database_context():
     """Create a properly configured mock database context."""
-    with patch('fullon_ohlcv_service.config.database_config.DatabaseContext') as mock_ctx:
+    with patch("fullon_ohlcv_service.config.database_config.DatabaseContext") as mock_ctx:
         mock_db = MagicMock()  # Use MagicMock instead of AsyncMock for non-async methods
         mock_db.exchanges = MagicMock()
         mock_db.symbols = MagicMock()
         mock_db.session = MagicMock()
         # Only the actual async methods should be AsyncMock
         mock_db.exchanges.get_user_exchanges = AsyncMock()
+        mock_db.exchanges.get_cat_exchanges = AsyncMock()
         mock_db.symbols.get_by_exchange_id = AsyncMock()
         mock_db.symbols.get_by_symbol = AsyncMock()
+        mock_db.symbols.get_all = AsyncMock()
         # Mock session.execute for the fallback query
         mock_result = MagicMock()
         mock_scalars = MagicMock()
@@ -40,35 +42,51 @@ class TestGetCollectionTargets:
 
         # Setup mock data with correct field names
         mock_exchanges = [
-            {'cat_ex_id': 1, 'ex_name': 'kraken', 'ex_id': 1},
-            {'cat_ex_id': 2, 'ex_name': 'binance', 'ex_id': 2},
-            {'cat_ex_id': 3, 'ex_name': 'coinbase', 'ex_id': 3}
+            {"cat_ex_id": 1, "ex_named": "kraken", "ex_id": 1},
+            {"cat_ex_id": 2, "ex_named": "binance", "ex_id": 2},
+            {"cat_ex_id": 3, "ex_named": "coinbase", "ex_id": 3},
         ]
 
         mock_kraken_symbols = [
-            MagicMock(symbol='BTC/USD', active=True),
-            MagicMock(symbol='ETH/USD', active=True),
-            MagicMock(symbol='LTC/USD', active=False)  # Inactive, should be excluded
+            MagicMock(symbol="BTC/USD", active=True),
+            MagicMock(symbol="ETH/USD", active=True),
+            MagicMock(symbol="LTC/USD", active=False),  # Inactive, should be excluded
         ]
 
         mock_binance_symbols = [
-            MagicMock(symbol='BTC/USDT', active=True),
-            MagicMock(symbol='ETH/USDT', active=True)
+            MagicMock(symbol="BTC/USDT", active=True),
+            MagicMock(symbol="ETH/USDT", active=True),
         ]
 
         # Setup mock returns
         mock_db.exchanges.get_user_exchanges.return_value = mock_exchanges
 
-        # Mock symbols.get_by_exchange_id to return different symbols based on exchange_id
-        def get_symbols_by_exchange(exchange_id):
-            if exchange_id == 1:  # kraken
+        # Mock cat_exchanges (needed for name lookup)
+        kraken_cat = MagicMock()
+        kraken_cat.cat_ex_id = 1
+        kraken_cat.name = "kraken"
+
+        binance_cat = MagicMock()
+        binance_cat.cat_ex_id = 2
+        binance_cat.name = "binance"
+
+        coinbase_cat = MagicMock()
+        coinbase_cat.cat_ex_id = 3
+        coinbase_cat.name = "coinbase"
+
+        mock_cat_exchanges = [kraken_cat, binance_cat, coinbase_cat]
+        mock_db.exchanges.get_cat_exchanges.return_value = mock_cat_exchanges
+
+        # Mock symbols.get_all to return different symbols based on exchange_name
+        def get_symbols_by_exchange_name(exchange_name=None, **kwargs):
+            if exchange_name == "kraken":
                 return mock_kraken_symbols
-            elif exchange_id == 2:  # binance
+            elif exchange_name == "binance":
                 return mock_binance_symbols
-            else:  # coinbase (cat_ex_id=3)
+            else:  # coinbase or other
                 return []
 
-        mock_db.symbols.get_by_exchange_id.side_effect = get_symbols_by_exchange
+        mock_db.symbols.get_all.side_effect = get_symbols_by_exchange_name
 
         # Import and test the function
         from fullon_ohlcv_service.config.database_config import get_collection_targets
@@ -78,20 +96,18 @@ class TestGetCollectionTargets:
         # Assertions
         assert isinstance(targets, dict)
         assert len(targets) == 2  # Only exchanges with symbols
-        assert 'kraken' in targets
-        assert 'binance' in targets
+        assert "kraken" in targets
+        assert "binance" in targets
+        assert targets["kraken"]["symbols"] == ["BTC/USD", "ETH/USD"]
+        assert targets["kraken"]["ex_id"] == 1
+        assert targets["binance"]["symbols"] == ["BTC/USDT", "ETH/USDT"]
+        assert targets["binance"]["ex_id"] == 2
 
-        # Check kraken exchange info (LTC/USD should be excluded as inactive)
-        assert targets['kraken']['symbols'] == ['BTC/USD', 'ETH/USD']
-        assert targets['kraken']['ex_id'] == 1
-
-        # Check binance exchange info
-        assert targets['binance']['symbols'] == ['BTC/USDT', 'ETH/USDT']
-        assert targets['binance']['ex_id'] == 2
-
-        # Verify correct database calls
+        # Verify the correct database calls were made
         mock_db.exchanges.get_user_exchanges.assert_called_once_with(uid=1)
-        assert mock_db.symbols.get_by_exchange_id.call_count == 3  # Called for all exchanges
+        mock_db.exchanges.get_cat_exchanges.assert_called_once_with(all=True)
+        # get_all is called for each exchange with valid cat_ex_id
+        assert mock_db.symbols.get_all.call_count == 3  # Called for kraken, binance, and coinbase
 
     @pytest.mark.asyncio
     async def test_get_collection_targets_empty_database(self, mock_database_context):
@@ -115,14 +131,12 @@ class TestGetCollectionTargets:
         """Test when exchange has no active symbols."""
         mock_db = mock_database_context
 
-        mock_exchanges = [
-            {'cat_ex_id': 1, 'name': 'kraken', 'active': True}
-        ]
+        mock_exchanges = [{"cat_ex_id": 1, "name": "kraken", "active": True}]
 
         # All symbols are inactive
         mock_symbols = [
-            MagicMock(symbol='BTC/USD', active=False),
-            MagicMock(symbol='ETH/USD', active=False)
+            MagicMock(symbol="BTC/USD", active=False),
+            MagicMock(symbol="ETH/USD", active=False),
         ]
 
         mock_db.exchanges.get_user_exchanges.return_value = mock_exchanges
@@ -140,14 +154,10 @@ class TestGetCollectionTargets:
         """Test getting targets for different user ID."""
         mock_db = mock_database_context
 
-        mock_exchanges = [
-            {'cat_ex_id': 1, 'name': 'kraken', 'active': True}
-        ]
+        mock_exchanges = [{"cat_ex_id": 1, "name": "kraken", "active": True}]
 
         mock_db.exchanges.get_user_exchanges.return_value = mock_exchanges
-        mock_db.symbols.get_by_exchange_id.return_value = [
-            MagicMock(symbol='BTC/USD', active=True)
-        ]
+        mock_db.symbols.get_by_exchange_id.return_value = [MagicMock(symbol="BTC/USD", active=True)]
 
         from fullon_ohlcv_service.config.database_config import get_collection_targets
 
@@ -171,10 +181,10 @@ class TestShouldCollectOhlcv:
 
         from fullon_ohlcv_service.config.database_config import should_collect_ohlcv
 
-        result = await should_collect_ohlcv('kraken', 'BTC/USD')
+        result = await should_collect_ohlcv("kraken", "BTC/USD")
 
         assert result is True
-        mock_db.symbols.get_by_symbol.assert_called_once_with('BTC/USD')
+        mock_db.symbols.get_by_symbol.assert_called_once_with("BTC/USD")
 
     @pytest.mark.asyncio
     async def test_should_collect_ohlcv_ticker_only_symbol(self, mock_database_context):
@@ -187,10 +197,10 @@ class TestShouldCollectOhlcv:
 
         from fullon_ohlcv_service.config.database_config import should_collect_ohlcv
 
-        result = await should_collect_ohlcv('kraken', 'BTC/USD')
+        result = await should_collect_ohlcv("kraken", "BTC/USD")
 
         assert result is False
-        mock_db.symbols.get_by_symbol.assert_called_once_with('BTC/USD')
+        mock_db.symbols.get_by_symbol.assert_called_once_with("BTC/USD")
 
     @pytest.mark.asyncio
     async def test_should_collect_ohlcv_symbol_not_found(self, mock_database_context):
@@ -202,10 +212,10 @@ class TestShouldCollectOhlcv:
 
         from fullon_ohlcv_service.config.database_config import should_collect_ohlcv
 
-        result = await should_collect_ohlcv('kraken', 'UNKNOWN/PAIR')
+        result = await should_collect_ohlcv("kraken", "UNKNOWN/PAIR")
 
         assert result is False
-        mock_db.symbols.get_by_symbol.assert_called_once_with('UNKNOWN/PAIR')
+        mock_db.symbols.get_by_symbol.assert_called_once_with("UNKNOWN/PAIR")
 
     @pytest.mark.asyncio
     async def test_should_collect_ohlcv_database_error(self, mock_database_context):
@@ -219,7 +229,7 @@ class TestShouldCollectOhlcv:
 
         # Should handle error gracefully
         with pytest.raises(Exception, match="Database connection failed"):
-            await should_collect_ohlcv('kraken', 'BTC/USD')
+            await should_collect_ohlcv("kraken", "BTC/USD")
 
 
 class TestIntegrationDatabaseConfig:
@@ -244,7 +254,9 @@ class TestIntegrationDatabaseConfig:
         # Create cat_exchanges entry manually (since it doesn't have a model/factory)
         # This is the parent table that Exchange.cat_ex_id references
         await db_context.session.execute(
-            text("INSERT INTO cat_exchanges (cat_ex_id, name) VALUES (2001, 'test_exchange_cat') ON CONFLICT DO NOTHING")
+            text(
+                "INSERT INTO cat_exchanges (cat_ex_id, name) VALUES (2001, 'test_exchange_cat') ON CONFLICT DO NOTHING"
+            )
         )
         await db_context.commit()
 
@@ -252,7 +264,7 @@ class TestIntegrationDatabaseConfig:
         exchange = ExchangeFactory(
             uid=user.uid,
             cat_ex_id=2001,  # Links to the cat_exchanges entry we just created
-            name="test_exchange"
+            name="test_exchange",
         )
         db_context.session.add(exchange)
         await db_context.commit()
@@ -261,9 +273,9 @@ class TestIntegrationDatabaseConfig:
         symbol = Symbol(
             cat_ex_id=exchange.cat_ex_id,
             symbol="BTC/USD",
-            base="BTC",      # Required NOT NULL field
-            quote="USD",     # Required NOT NULL field
-            only_ticker=False  # Allow OHLCV collection
+            base="BTC",  # Required NOT NULL field
+            quote="USD",  # Required NOT NULL field
+            only_ticker=False,  # Allow OHLCV collection
         )
         db_context.session.add(symbol)
         await db_context.commit()
@@ -288,19 +300,48 @@ class TestLogging:
     async def test_get_collection_targets_logging(self, mock_database_context):
         """Test that appropriate log messages are generated."""
         mock_exchanges = [
-            {'cat_ex_id': 1, 'name': 'kraken', 'active': True},
-            {'cat_ex_id': 2, 'name': 'binance', 'active': True}
+            {"cat_ex_id": 1, "ex_named": "kraken", "ex_id": 1},
+            {"cat_ex_id": 2, "ex_named": "binance", "ex_id": 2},
         ]
 
-        mock_symbols = [
-            MagicMock(symbol='BTC/USD', active=True),
-            MagicMock(symbol='ETH/USD', active=True)
+        mock_kraken_symbols = [
+            MagicMock(symbol="BTC/USD", active=True),
+            MagicMock(symbol="ETH/USD", active=True),
         ]
 
-        with patch('fullon_ohlcv_service.config.database_config.get_component_logger') as mock_logger:
+        mock_binance_symbols = [
+            MagicMock(symbol="BTC/USDT", active=True),
+            MagicMock(symbol="ETH/USDT", active=True),
+        ]
+
+        with patch(
+            "fullon_ohlcv_service.config.database_config.get_component_logger"
+        ) as mock_logger:
             mock_db = mock_database_context
             mock_db.exchanges.get_user_exchanges.return_value = mock_exchanges
-            mock_db.symbols.get_by_exchange_id.return_value = mock_symbols
+
+            # Mock cat_exchanges (needed for name lookup)
+            kraken_cat = MagicMock()
+            kraken_cat.cat_ex_id = 1
+            kraken_cat.name = "kraken"
+
+            binance_cat = MagicMock()
+            binance_cat.cat_ex_id = 2
+            binance_cat.name = "binance"
+
+            mock_cat_exchanges = [kraken_cat, binance_cat]
+            mock_db.exchanges.get_cat_exchanges.return_value = mock_cat_exchanges
+
+            # Mock symbols.get_all to return different symbols based on exchange_name
+            def get_symbols_by_exchange_name(exchange_name=None, **kwargs):
+                if exchange_name == "kraken":
+                    return mock_kraken_symbols
+                elif exchange_name == "binance":
+                    return mock_binance_symbols
+                else:
+                    return []
+
+            mock_db.symbols.get_all.side_effect = get_symbols_by_exchange_name
 
             logger_instance = MagicMock()
             mock_logger.return_value = logger_instance
@@ -316,5 +357,5 @@ class TestLogging:
             logger_instance.info.assert_called_once()
             call_args = logger_instance.info.call_args
             assert call_args[0][0] == "Loaded configuration"
-            assert call_args[1]['exchanges'] == 2
-            assert call_args[1]['total_symbols'] == 4  # 2 exchanges * 2 symbols each
+            assert call_args[1]["exchanges"] == 2
+            assert call_args[1]["total_symbols"] == 4  # 2 exchanges * 2 symbols each

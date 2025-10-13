@@ -9,6 +9,7 @@ This adapts the fullon_ticker_service pattern for OHLCV service testing:
 
 import asyncio
 import os
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
@@ -94,16 +95,26 @@ async def drop_test_database(db_name: str) -> None:
         await conn.close()
 
 
-def get_worker_db_name(request) -> str:
-    """Generate database name per worker (not per test)."""
+def get_test_db_names(request) -> tuple[str, str]:
+    """Generate worker-aware database names for BOTH ORM and OHLCV databases."""
     module_name = request.module.__name__.split(".")[-1]
-
-    # Add worker id if running in parallel
     worker_id = getattr(request.config, "workerinput", {}).get("workerid", "")
+
     if worker_id:
-        return f"test_ohlcv_{module_name}_{worker_id}"
+        orm_db = f"test_ohlcv_service_{module_name}_{worker_id}"
+        ohlcv_db = f"test_ohlcv_service_{module_name}_{worker_id}_ohlcv"
     else:
-        return f"test_ohlcv_{module_name}"
+        orm_db = f"test_ohlcv_service_{module_name}"
+        ohlcv_db = f"test_ohlcv_service_{module_name}_ohlcv"
+
+    return orm_db, ohlcv_db
+
+
+def get_worker_db_name(request) -> str:
+    """Generate database name per worker (not per test). DEPRECATED: Use get_test_db_names instead."""
+    # Return ORM database name for backward compatibility
+    orm_db, _ = get_test_db_names(request)
+    return orm_db
 
 
 async def get_or_create_worker_engine(db_name: str) -> Any:
@@ -304,8 +315,9 @@ async def create_rollback_database_context(request) -> AsyncGenerator[TestDataba
     - Zero explicit cleanup - SQLAlchemy handles it automatically
     - Same interface as DatabaseContext
     """
-    # Get database name for this module
-    db_name = get_worker_db_name(request)
+    # Get ORM database name for this module (using first element of tuple)
+    orm_db_name, _ = get_test_db_names(request)
+    db_name = orm_db_name
 
     # Get or create engine
     engine = await get_or_create_worker_engine(db_name)
@@ -364,6 +376,58 @@ def clear_all_caches():
 # ============================================================================
 
 
+@pytest_asyncio.fixture(scope="module")
+async def dual_test_databases(request) -> AsyncGenerator[dict[str, str], None]:
+    """Create dual test databases with worker isolation for integration tests."""
+    orm_db_name, ohlcv_db_name = get_test_db_names(request)
+
+    # Import here to avoid circular dependencies
+    import sys
+    from pathlib import Path
+    # Add examples to path for import
+    examples_dir = Path(__file__).parent.parent / "examples"
+    if str(examples_dir) not in sys.path:
+        sys.path.insert(0, str(examples_dir))
+    from demo_data import create_test_database, drop_test_database
+    from fullon_orm import init_db
+
+    # Create both databases
+    await create_test_database(orm_db_name)
+    await create_test_database(ohlcv_db_name)
+
+    # Store original DB names for restoration
+    original_orm_db = os.getenv("DB_NAME")
+    original_ohlcv_db = os.getenv("DB_OHLCV_NAME")
+
+    # Set environment variables for this worker
+    os.environ["DB_NAME"] = orm_db_name
+    os.environ["DB_OHLCV_NAME"] = ohlcv_db_name
+
+    try:
+        # Initialize schema
+        await init_db()
+
+        yield {
+            "orm_db": orm_db_name,
+            "ohlcv_db": ohlcv_db_name
+        }
+    finally:
+        # Restore environment variables
+        if original_orm_db:
+            os.environ["DB_NAME"] = original_orm_db
+        else:
+            os.environ.pop("DB_NAME", None)
+
+        if original_ohlcv_db:
+            os.environ["DB_OHLCV_NAME"] = original_ohlcv_db
+        else:
+            os.environ.pop("DB_OHLCV_NAME", None)
+
+        # Cleanup databases
+        await drop_test_database(orm_db_name)
+        await drop_test_database(ohlcv_db_name)
+
+
 @pytest.fixture(scope="function")
 def event_loop():
     """Create function-scoped event loop to prevent closure issues."""
@@ -372,19 +436,31 @@ def event_loop():
 
     yield loop
 
-    # Proper cleanup - close loop after test
+    # Proper cleanup - close loop after test with timeout to prevent hanging
     try:
         # Cancel all pending tasks
         pending_tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
         if pending_tasks:
             for task in pending_tasks:
                 task.cancel()
-            # Wait for cancellation to complete
-            loop.run_until_complete(asyncio.gather(*pending_tasks, return_exceptions=True))
+            # Wait for cancellation with timeout to avoid ExchangeQueue hang
+            try:
+                future = asyncio.gather(*pending_tasks, return_exceptions=True)
+                loop.run_until_complete(asyncio.wait_for(future, timeout=2.0))
+            except asyncio.TimeoutError:
+                # Force close after timeout - don't wait for hung tasks
+                pass
 
-        loop.close()
+        # Force close the loop regardless of cleanup success
+        if not loop.is_closed():
+            loop.close()
     except Exception:
-        pass  # Ignore cleanup errors
+        # Always try to close the loop on error
+        try:
+            if not loop.is_closed():
+                loop.close()
+        except Exception:
+            pass
 
 
 @pytest_asyncio.fixture
@@ -395,7 +471,8 @@ async def db_context(request, monkeypatch) -> AsyncGenerator[TestDatabaseContext
         clear_all_caches()
 
         # Patch OHLCV config to use the test database and connection settings
-        db_name = get_worker_db_name(request)
+        orm_db_name, ohlcv_db_name = get_test_db_names(request)
+        db_name = orm_db_name  # For backward compatibility
         if ohlcv_config:
             # Patch database name
             monkeypatch.setattr(ohlcv_config.database, "test_name", db_name, raising=False)
@@ -428,7 +505,8 @@ async def db_context(request, monkeypatch) -> AsyncGenerator[TestDatabaseContext
 async def ohlcv_db(request, monkeypatch) -> AsyncGenerator[TestDatabaseContext]:
     """OHLCV database wrapper fixture - alias for db_context for compatibility."""
     # Patch OHLCV config to use the test database and connection settings
-    db_name = get_worker_db_name(request)
+    orm_db_name, ohlcv_db_name = get_test_db_names(request)
+    db_name = orm_db_name  # For backward compatibility
     if ohlcv_config:
         # Patch database name
         monkeypatch.setattr(ohlcv_config.database, "test_name", db_name, raising=False)
@@ -575,7 +653,8 @@ class AsyncMock:
 async def test_db(request):
     """Legacy compatibility fixture."""
     # Get database name for this module
-    db_name = get_worker_db_name(request)
+    orm_db_name, _ = get_test_db_names(request)
+    db_name = orm_db_name
 
     # Get or create engine
     engine = await get_or_create_worker_engine(db_name)
@@ -602,7 +681,8 @@ async def db_session(request):
 @pytest.fixture
 def test_db_name(request):
     """Legacy test database name fixture."""
-    return get_worker_db_name(request)
+    orm_db_name, _ = get_test_db_names(request)
+    return orm_db_name
 
 
 @pytest.fixture
@@ -623,44 +703,19 @@ def redis_cache_db(worker_id):
 
 @pytest.fixture(scope="session", autouse=True)
 def cleanup(request):
-    """Clean up after all tests."""
+    """Clean up after all tests - DISABLED to prevent pytest hanging.
 
-    def finalizer():
-        import asyncio
+    The asyncio.run() hang is caused by ExchangeQueue's global patch when imported by
+    production code. This affects pytest's internal async cleanup mechanisms.
 
-        async def async_cleanup():
-            try:
-                # Cleanup all created databases and engines
-                for db_name in list(_db_created.keys()):
-                    try:
-                        # Dispose engine if it exists
-                        if db_name in _engine_cache:
-                            engine = _engine_cache[db_name]
-                            await engine.dispose()
-                            print(f"Disposed engine for {db_name}")
+    Since we use NullPool (no connection pooling) and per-worker databases, skipping
+    cleanup is safe. Test databases can be manually dropped if needed.
 
-                        # Drop the test database
-                        await drop_test_database(db_name)
-                        print(f"Dropped test database: {db_name}")
-
-                    except Exception as e:
-                        print(f"Warning: Failed to cleanup {db_name}: {e}")
-
-                # Clear caches
-                _engine_cache.clear()
-                _db_created.clear()
-                print("Test cleanup completed")
-
-            except Exception as e:
-                print(f"Error during test cleanup: {e}")
-
-        # Run the async cleanup
-        try:
-            asyncio.run(async_cleanup())
-        except Exception as e:
-            print(f"Failed to run async cleanup: {e}")
-
-    request.addfinalizer(finalizer)
+    WORKAROUND: Use `timeout` wrapper or Ctrl+C to force exit if pytest hangs.
+    Example: timeout 120 poetry run pytest tests/unit/ -n auto
+    """
+    # Fixture must exist but does nothing to avoid hanging
+    yield
 
 
 # ============================================================================
