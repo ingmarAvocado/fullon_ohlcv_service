@@ -1,6 +1,6 @@
 [project]
 name = "fullon-ohlcv-service"
-version = "1.1.1"
+version = "1.1.2"
 description = "Async daemon service for collecting OHLCV candles and trade data from cryptocurrency exchanges"
 authors = [
     {name = "ingmar", email = "ingmar@avocadoblock.com"}
@@ -49,16 +49,16 @@ addopts = [
     "--cov-report=html",
     "--cov-fail-under=90",
     "-ra",
-    "--tb=short"
+]
+filterwarnings = [
+    "ignore:coroutine .* was never awaited:RuntimeWarning",
+    "ignore::DeprecationWarning:uvloop.*",
+    "ignore:uvloop.install.*:DeprecationWarning",
 ]
 markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "slow: marks tests as slow running",
-]
-filterwarnings = [
-    "ignore::DeprecationWarning:uvloop.*",
-    "ignore:uvloop.install.*:DeprecationWarning",
 ]
 
 [tool.coverage.run]
