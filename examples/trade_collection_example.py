@@ -49,6 +49,7 @@ from demo_data import create_dual_test_databases, drop_dual_test_databases, inst
 from fullon_log import get_component_logger
 from fullon_ohlcv.repositories.ohlcv import TimeseriesRepository
 from fullon_orm import DatabaseContext, init_db
+from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 
 
 logger = get_component_logger("fullon.trade.test")
@@ -100,15 +101,12 @@ async def example_trade_collection(symbol):
 
     try:
         # Create daemon
-        from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
 
         daemon = OhlcvServiceDaemon()
 
         # Start collection in background
         await daemon.process_symbol(symbol)
 
-        import pdb
-        pdb.set_trace()
         current = datetime.now()
         seconds_to_end = 60 - current.second
         sleep_duration = seconds_to_end + 1

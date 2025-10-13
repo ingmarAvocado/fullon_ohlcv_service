@@ -28,6 +28,7 @@ except Exception as e:
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from datetime import UTC, datetime, timedelta
 
 # CRITICAL: Set BOTH test database names FIRST, before ANY imports
 from demo_data import generate_test_db_name
@@ -43,6 +44,8 @@ os.environ["DB_OHLCV_NAME"] = test_db_ohlcv
 from demo_data import create_dual_test_databases, drop_dual_test_databases, install_demo_data
 from fullon_log import get_component_logger
 from fullon_orm import DatabaseContext, init_db
+from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
+
 
 
 logger = get_component_logger("fullon.ohlcv.test")
@@ -96,26 +99,21 @@ async def example_ohlcv_collection(symbol):
 
     try:
         # Create daemon
-        from fullon_ohlcv_service.daemon import OhlcvServiceDaemon
-
         daemon = OhlcvServiceDaemon()
 
-        # Start collection in background
-        collection_task = asyncio.create_task(daemon.process_symbol(symbol))
+        # Start collection and wait for historic phase to complete
+        await daemon.process_symbol(symbol)
 
-        # Wait for collection to run (e.g., 2 minutes)
-        print("⏱️  Running collection for 2 minutes...")
-        await asyncio.sleep(120)
+        current = datetime.now()
+        seconds_to_end = 60 - current.second
+        sleep_duration = seconds_to_end + 1
+        print(
+            f"⏱️  Running collection until end of minute plus 1 second ({sleep_duration} seconds)..."
+        )
+        await asyncio.sleep(sleep_duration)
 
         # Check results
         await verify_ohlcv_data(symbol)
-
-        # Stop daemon
-        collection_task.cancel()
-        try:
-            await collection_task
-        except asyncio.CancelledError:
-            pass
 
         print("✅ Collection completed")
 
