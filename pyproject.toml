@@ -1,9 +1,9 @@
 [project]
 name = "fullon-ohlcv-service"
-version = "1.1.6"
+version = "1.1.7"
 description = "Async daemon service for collecting OHLCV candles and trade data from cryptocurrency exchanges"
 authors = [
-    {name = "ingmar", email = "ingmar@avocadoblock.com"}
+    {name = "Ingmar Frey", email = "ingmar.frey@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.13,<4.0"
