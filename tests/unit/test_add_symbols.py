@@ -30,7 +30,7 @@ class TestAddSymbol:
 
     @pytest.mark.asyncio
     async def test_add_symbol_init_fails_but_continues(self):
-        """Test symbol initialization fails but is considered successful."""
+        """Test symbol initialization fails with exception."""
         with patch("fullon_ohlcv_service.utils.add_symbols.OHLCVBaseRepository") as mock_repo_class:
             mock_repo = AsyncMock()
             mock_repo_class.return_value.__aenter__.return_value = mock_repo
@@ -38,7 +38,7 @@ class TestAddSymbol:
 
             result = await add_symbol("binance", "BTC/USDT")
 
-            assert result is True  # Should be True due to exception handling
+            assert result is False  # Should be False when exception occurs
             mock_repo.init_symbol.assert_called_once()
 
     @pytest.mark.asyncio

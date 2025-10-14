@@ -1,0 +1,495 @@
+2025-10-13 22:53:43.808 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:53:43.954 | INFO     | fullon_exchange.queue.exchange_queue | 101 | ✅ Patched asyncio.run() at module import for automatic clean shutdown
+2025-10-13 22:53:43.980 | INFO     | demo_data | 211 | Creating dual test databases: orm=fullon2_test_6iqcxocp, ohlcv=fullon2_test_6iqcxocp_ohlcv
+2025-10-13 22:53:43.981 | INFO     | demo_data | 93 | Creating isolated test database: fullon2_test_6iqcxocp
+2025-10-13 22:53:43.981 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:53:44.021 | INFO     | demo_data | 132 | Test database created successfully: fullon2_test_6iqcxocp
+2025-10-13 22:53:44.025 | INFO     | demo_data | 93 | Creating isolated test database: fullon2_test_6iqcxocp_ohlcv
+2025-10-13 22:53:44.025 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:53:44.052 | INFO     | demo_data | 132 | Test database created successfully: fullon2_test_6iqcxocp_ohlcv
+2025-10-13 22:53:44.055 | INFO     | demo_data | 219 | Dual test databases created: orm=fullon2_test_6iqcxocp, ohlcv=fullon2_test_6iqcxocp_ohlcv
+2025-10-13 22:53:44.056 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:53:44.116 | INFO     | demo_data | 310 | Starting demo data installation (matching fullon_orm)
+2025-10-13 22:53:44.177 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: kraken
+2025-10-13 22:53:44.187 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: bitmex
+2025-10-13 22:53:44.197 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: hyperliquid
+2025-10-13 22:53:44.226 | INFO     | demo_data | 347 | Demo data installation completed successfully
+2025-10-13 22:53:44.227 | INFO     | __main__ | 69 | Demo data installed successfully
+2025-10-13 22:53:44.227 | INFO     | fullon_ohlcv_service.daemon | 49 | Starting OHLCV Service Daemon
+2025-10-13 22:53:44.232 | INFO     | fullon_ohlcv_service.daemon | 59 | Loaded symbols symbol_count=3
+2025-10-13 22:53:44.233 | INFO     | fullon_ohlcv_service.utils.add_symbols | 64 | Starting initialization of all symbols 
+2025-10-13 22:53:44.233 | INFO     | fullon_ohlcv_service.utils.add_symbols | 75 | Found 3 symbols to initialize
+2025-10-13 22:53:44.233 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol bitmex:BTC/USD:BTC'
+2025-10-13 22:53:44.332 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol bitmex:BTC/USD:BTC
+2025-10-13 22:53:44.333 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol hyperliquid:BTC/USDC:USDC'
+2025-10-13 22:53:44.357 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol hyperliquid:BTC/USDC:USDC
+2025-10-13 22:53:44.357 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol kraken:BTC/USDC'
+2025-10-13 22:53:44.388 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol kraken:BTC/USDC
+2025-10-13 22:53:44.388 | INFO     | fullon_ohlcv_service.utils.add_symbols | 97 | Symbol initialization complete: 3/3 successful
+2025-10-13 22:53:44.388 | INFO     | fullon_cache.event_loop | 134 | Event loop configured: uvloop
+2025-10-13 22:53:44.388 | INFO     | fullon_cache.connection | 121 | uvloop configured for optimal Redis performance
+2025-10-13 22:53:44.391 | INFO     | fullon_ohlcv_service.daemon | 76 | Starting historic collection phase
+2025-10-13 22:53:44.391 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 72 | Starting historical OHLCV collection
+2025-10-13 22:53:44.392 | INFO     | fullon_ohlcv_service.trade.historic_collector | 73 | Starting historical trade collection
+2025-10-13 22:53:44.399 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 169 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:53:44.399 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:53:44.400 | INFO     | fullon_exchange.queue.exchange_queue | 423 | ExchangeQueue factory initialized with auto-shutdown
+2025-10-13 22:53:44.634 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized bitmex REST base interface
+2025-10-13 22:53:44.634 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized bitmex exposed REST interface
+2025-10-13 22:53:44.634 | INFO     | bitmex_rest_adapter | 44 | Initialized BitMEX REST adapter with fullon_orm support
+2025-10-13 22:53:44.634 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for bitmex
+2025-10-13 22:53:44.634 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for bitmex...
+2025-10-13 22:53:44.635 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-13 22:53:44.638 | INFO     | fullon_exchange.rest.base_interface | 212 | 🌍 Direct connection - no proxy configuration found
+2025-10-13 22:53:47.126 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 106 markets
+2025-10-13 22:53:47.127 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-13 22:53:47.127 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for bitmex
+2025-10-13 22:53:47.127 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 215 | Exchange supports native OHLCV - proceeding with collection exchange=bitmex symbol_count=1
+2025-10-13 22:53:47.127 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:53:47.128 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized hyperliquid REST base interface
+2025-10-13 22:53:47.128 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized hyperliquid exposed REST interface
+2025-10-13 22:53:47.129 | INFO     | hyperliquid_rest_adapter | 56 | Initialized Hyperliquid REST adapter with fullon_orm support
+2025-10-13 22:53:47.129 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for hyperliquid
+2025-10-13 22:53:47.129 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for hyperliquid...
+2025-10-13 22:53:47.129 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-13 22:53:52.048 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 441 markets
+2025-10-13 22:53:52.050 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-13 22:53:52.050 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for hyperliquid
+2025-10-13 22:53:52.050 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 215 | Exchange supports native OHLCV - proceeding with collection exchange=hyperliquid symbol_count=1
+2025-10-13 22:53:52.050 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=kraken symbol_count=1
+2025-10-13 22:53:52.051 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized kraken REST base interface
+2025-10-13 22:53:52.052 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized kraken exposed REST interface
+2025-10-13 22:53:52.052 | INFO     | kraken_rest_adapter | 43 | Initialized Kraken REST adapter with fullon_orm support
+2025-10-13 22:53:52.052 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for kraken
+2025-10-13 22:53:52.052 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for kraken...
+2025-10-13 22:53:52.052 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-13 22:53:54.042 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 1271 markets
+2025-10-13 22:53:54.045 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-13 22:53:54.045 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for kraken
+2025-10-13 22:53:54.045 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 208 | Exchange requires trade collection instead of OHLCV - skipping OHLCV collection exchange=kraken symbol_count=1
+2025-10-13 22:53:54.050 | INFO     | fullon_ohlcv_service.trade.historic_collector | 169 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:53:54.050 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:53:54.051 | INFO     | fullon_ohlcv_service.trade.historic_collector | 215 | Exchange has native OHLCV support - skipping trade collection exchange=bitmex symbol_count=1
+2025-10-13 22:53:54.051 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:53:54.051 | INFO     | fullon_ohlcv_service.trade.historic_collector | 215 | Exchange has native OHLCV support - skipping trade collection exchange=hyperliquid symbol_count=1
+2025-10-13 22:53:54.051 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=kraken symbol_count=1
+2025-10-13 22:53:54.051 | INFO     | fullon_ohlcv_service.trade.historic_collector | 222 | Exchange requires trade collection for OHLCV exchange=kraken symbol_count=1
+2025-10-13 22:53:57.228 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-12 22:53:54 to 2025-10-13 06:18:26. 59728 seconds (16.6 hours) left
+2025-10-13 22:53:57.228 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-10 22:53:54 to 2025-10-11 15:33:00. 199254 seconds (2.3 days) left
+2025-10-13 22:53:57.231 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-10 22:53:54 to 2025-10-11 15:33:00. 199254 seconds (2.3 days) left
+2025-10-13 22:54:00.611 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-11 15:33:01 to 2025-10-12 08:13:00. 139254 seconds (1.6 days) left
+2025-10-13 22:54:00.611 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-11 15:33:01 to 2025-10-12 08:13:00. 139254 seconds (1.6 days) left
+2025-10-13 22:54:00.612 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 999 trades for BTC/USDC:kraken from 2025-10-13 06:18:27 to 2025-10-13 11:27:33. 41181 seconds (11.4 hours) left
+2025-10-13 22:54:03.450 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-12 08:13:01 to 2025-10-13 00:53:00. 79254 seconds (22.0 hours) left
+2025-10-13 22:54:03.452 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 11:27:34 to 2025-10-13 11:43:20. 40233 seconds (11.2 hours) left
+2025-10-13 22:54:03.452 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-12 08:13:01 to 2025-10-13 00:53:00. 79254 seconds (22.0 hours) left
+2025-10-13 22:54:06.873 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 996 trades for BTC/USDC:kraken from 2025-10-13 11:43:21 to 2025-10-13 13:31:04. 33769 seconds (9.4 hours) left
+2025-10-13 22:54:06.874 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-13 00:53:01 to 2025-10-13 17:33:00. 19254 seconds (5.3 hours) left
+2025-10-13 22:54:06.875 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-13 00:53:01 to 2025-10-13 17:33:00. 19254 seconds (5.3 hours) left
+2025-10-13 22:54:09.216 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 320 candles for BTC/USDC:USDC:hyperliquid from 2025-10-13 17:33:01 to 2025-10-13 22:53:00. 54 seconds left
+2025-10-13 22:54:09.216 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 997 trades for BTC/USDC:kraken from 2025-10-13 13:31:05 to 2025-10-13 17:05:01. 20933 seconds (5.8 hours) left
+2025-10-13 22:54:09.216 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 320 candles for BTC/USD:BTC:bitmex from 2025-10-13 17:33:01 to 2025-10-13 22:53:00. 54 seconds left
+2025-10-13 22:54:11.009 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 241 | Historical collection completed for symbol symbol=hyperliquid:BTC/USDC:USDC candles_collected=4320
+2025-10-13 22:54:11.010 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 241 | Historical collection completed for symbol symbol=bitmex:BTC/USD:BTC candles_collected=4320
+2025-10-13 22:54:11.010 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 114 | Historical collection completed total_symbols=2 total_candles=8640
+2025-10-13 22:54:11.028 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 17:05:02 to 2025-10-13 21:23:37. 5416 seconds (1.5 hours) left
+2025-10-13 22:54:11.655 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 127 trades for BTC/USDC:kraken from 2025-10-13 21:23:38 to 2025-10-13 22:51:27. 146 seconds (2.4 minutes) left
+2025-10-13 22:54:12.225 | INFO     | fullon_ohlcv_service.trade.historic_collector | 248 | Historical collection completed for symbol symbol=kraken:BTC/USDC trades_collected=6119
+2025-10-13 22:54:12.225 | INFO     | fullon_ohlcv_service.trade.historic_collector | 115 | Historical collection completed total_symbols=1 total_trades=6119
+2025-10-13 22:54:12.226 | INFO     | fullon_ohlcv_service.daemon | 89 | Starting live collection phase
+2025-10-13 22:54:12.226 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 46 | Starting live OHLCV collection
+2025-10-13 22:54:12.226 | INFO     | fullon_ohlcv_service.trade.live_collector | 45 | Starting live trade collection
+2025-10-13 22:54:12.232 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 86 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:54:12.233 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:54:12.344 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized bitmex WebSocket base interface
+2025-10-13 22:54:12.345 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized bitmex exposed WebSocket interface
+2025-10-13 22:54:12.345 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for bitmex
+2025-10-13 22:54:12.345 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for bitmex...
+2025-10-13 22:54:12.346 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-13 22:54:12.347 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-13 22:54:12.351 | INFO     | fullon_exchange.websocket.base_interface | 145 | 🔍 DEBUG - CCXT instance proxy settings:
+2025-10-13 22:54:12.352 | INFO     | fullon_exchange.websocket.base_interface | 159 |    aiohttp_proxy: None
+2025-10-13 22:54:12.352 | INFO     | fullon_exchange.websocket.base_interface | 159 |    aiohttp_trust_env: True
+2025-10-13 22:54:12.352 | INFO     | fullon_exchange.websocket.base_interface | 159 |    proxies: None
+2025-10-13 22:54:12.352 | INFO     | fullon_exchange.websocket.base_interface | 159 |    session: None
+2025-10-13 22:54:12.361 | INFO     | fullon_ohlcv_service.trade.live_collector | 92 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:54:12.362 | INFO     | fullon_ohlcv_service.trade.live_collector | 113 | Starting WebSocket for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:54:14.383 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-13 22:54:14.384 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:54:14.384 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 2.04s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:54:14.384 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for bitmex
+2025-10-13 22:54:14.384 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 132 | Exchange supports native OHLCV - proceeding with subscription exchange=bitmex symbol_count=1
+2025-10-13 22:54:14.388 | INFO     | fullon_exchange.websocket.exposed_interface | 608 | Started OHLCV subscription for BTC/USD:BTC (1m)
+2025-10-13 22:54:14.388 | INFO     | bitmex_websocket | 123 | Created subscription: subscribe_ohlcv (1760396054.3884385)
+2025-10-13 22:54:14.388 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 166 | Subscription result exchange=bitmex symbol=BTC/USD:BTC success=True
+2025-10-13 22:54:14.388 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 183 | Finished subscribing to OHLCV exchange=bitmex symbol_count=1
+2025-10-13 22:54:14.388 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:54:14.392 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized hyperliquid WebSocket base interface
+2025-10-13 22:54:14.392 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized hyperliquid exposed WebSocket interface
+2025-10-13 22:54:14.393 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for hyperliquid
+2025-10-13 22:54:14.393 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for hyperliquid...
+2025-10-13 22:54:14.393 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-13 22:54:14.393 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-13 22:54:14.500 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USD:BTC
+2025-10-13 22:54:14.500 | INFO     | bitmex_websocket | 123 | Created subscription: subscribe_trades (1760396054.5007467)
+2025-10-13 22:54:14.501 | INFO     | fullon_ohlcv_service.trade.live_collector | 152 | Subscription result exchange=bitmex symbol=BTC/USD:BTC success=True
+2025-10-13 22:54:14.502 | INFO     | fullon_ohlcv_service.trade.batcher | 52 | GlobalTradeBatcher initialized
+2025-10-13 22:54:14.502 | INFO     | fullon_ohlcv_service.trade.batcher | 105 | Batch processing started
+2025-10-13 22:54:14.502 | INFO     | fullon_ohlcv_service.trade.live_collector | 171 | Finished subscribing to trades exchange=bitmex symbol_count=1
+2025-10-13 22:54:14.502 | INFO     | fullon_ohlcv_service.trade.live_collector | 113 | Starting WebSocket for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:54:19.736 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-13 22:54:19.736 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': False, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:54:19.737 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 5.34s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': False, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:54:19.737 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for hyperliquid
+2025-10-13 22:54:19.737 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 132 | Exchange supports native OHLCV - proceeding with subscription exchange=hyperliquid symbol_count=1
+2025-10-13 22:54:19.739 | INFO     | fullon_exchange.websocket.exposed_interface | 608 | Started OHLCV subscription for BTC/USDC:USDC (1m)
+2025-10-13 22:54:19.740 | INFO     | hyperliquid_websocket | 136 | Created subscription: subscribe_ohlcv (1760396059.740097)
+2025-10-13 22:54:19.740 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 166 | Subscription result exchange=hyperliquid symbol=BTC/USDC:USDC success=True
+2025-10-13 22:54:19.740 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 183 | Finished subscribing to OHLCV exchange=hyperliquid symbol_count=1
+2025-10-13 22:54:19.740 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=kraken symbol_count=1
+2025-10-13 22:54:19.741 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized kraken WebSocket base interface
+2025-10-13 22:54:19.741 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized kraken exposed WebSocket interface
+2025-10-13 22:54:19.741 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for kraken
+2025-10-13 22:54:19.741 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for kraken...
+2025-10-13 22:54:19.742 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-13 22:54:19.742 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-13 22:54:19.752 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USDC:USDC
+2025-10-13 22:54:19.752 | INFO     | hyperliquid_websocket | 136 | Created subscription: subscribe_trades (1760396059.7523785)
+2025-10-13 22:54:19.752 | INFO     | fullon_ohlcv_service.trade.live_collector | 152 | Subscription result exchange=hyperliquid symbol=BTC/USDC:USDC success=True
+2025-10-13 22:54:19.752 | INFO     | fullon_ohlcv_service.trade.live_collector | 171 | Finished subscribing to trades exchange=hyperliquid symbol_count=1
+2025-10-13 22:54:19.753 | INFO     | fullon_ohlcv_service.trade.live_collector | 113 | Starting WebSocket for exchange exchange=kraken symbol_count=1
+2025-10-13 22:54:22.789 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-13 22:54:22.789 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': False, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:54:22.789 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 3.05s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': False, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:54:22.790 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for kraken
+2025-10-13 22:54:22.790 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 122 | Exchange requires trade collection instead of OHLCV - skipping OHLCV subscription exchange=kraken symbol_count=1
+2025-10-13 22:54:22.792 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USDC
+2025-10-13 22:54:22.792 | INFO     | kraken_websocket | 135 | Created subscription: subscribe_trades (1760396062.7927163)
+2025-10-13 22:54:22.792 | INFO     | fullon_ohlcv_service.trade.live_collector | 152 | Subscription result exchange=kraken symbol=BTC/USDC success=True
+2025-10-13 22:54:22.793 | INFO     | fullon_ohlcv_service.trade.live_collector | 171 | Finished subscribing to trades exchange=kraken symbol_count=1
+2025-10-13 22:54:22.793 | INFO     | fullon_ohlcv_service.daemon | 188 | Starting daemon cleanup...
+2025-10-13 22:54:22.793 | INFO     | fullon_ohlcv_service.trade.live_collector | 73 | Stopping live trade collection
+2025-10-13 22:54:22.793 | INFO     | fullon_ohlcv_service.trade.batcher | 87 | Symbol unregistered from batch processing exchange=hyperliquid symbol=BTC/USDC:USDC remaining_symbols=2
+2025-10-13 22:54:22.794 | INFO     | fullon_ohlcv_service.trade.batcher | 87 | Symbol unregistered from batch processing exchange=bitmex symbol=BTC/USD:BTC remaining_symbols=1
+2025-10-13 22:54:22.794 | INFO     | fullon_ohlcv_service.trade.batcher | 87 | Symbol unregistered from batch processing exchange=kraken symbol=BTC/USDC remaining_symbols=0
+2025-10-13 22:54:22.794 | INFO     | fullon_ohlcv_service.trade.batcher | 116 | Batch processing stopped
+2025-10-13 22:54:22.797 | INFO     | fullon_ohlcv_service.daemon | 210 | Daemon cleanup completed
+2025-10-13 22:55:00.001 | INFO     | fullon_ohlcv_service.daemon | 188 | Starting daemon cleanup...
+2025-10-13 22:55:00.001 | INFO     | fullon_ohlcv_service.trade.live_collector | 73 | Stopping live trade collection
+2025-10-13 22:55:00.003 | INFO     | fullon_ohlcv_service.daemon | 210 | Daemon cleanup completed
+2025-10-13 22:55:00.004 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: bitmex.btc_usd_btc_candles1m_view
+2025-10-13 22:55:00.019 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: hyperliquid.btc_usdc_usdc_candles1m_view
+2025-10-13 22:55:00.034 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: kraken.btc_usdc_candles1m_view
+2025-10-13 22:55:00.050 | INFO     | demo_data | 233 | Dropping dual test databases: orm=fullon2_test_6iqcxocp, ohlcv=fullon2_test_6iqcxocp_ohlcv
+2025-10-13 22:55:00.050 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:55:00.107 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:55:00.128 | INFO     | demo_data | 240 | Dual test databases dropped: orm=fullon2_test_6iqcxocp, ohlcv=fullon2_test_6iqcxocp_ohlcv
+2025-10-13 22:55:00.128 | INFO     | fullon_exchange.queue.exchange_queue | 73 | 📋 Patched asyncio.run() finally block - initiating cleanup
+2025-10-13 22:55:00.128 | INFO     | fullon_exchange.queue.exchange_queue | 80 | 🛡️ Calling shutdown_factory() with shield protection
+2025-10-13 22:55:00.129 | INFO     | fullon_exchange.queue.exchange_queue | 251 | 🔄 Starting factory shutdown...
+2025-10-13 22:55:00.129 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-13 22:55:00.129 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-13 22:55:00.129 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-13 22:55:00.618 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-13 22:55:00.619 | INFO     | kraken_websocket | 151 | Disconnected from Kraken WebSocket (final cleanup)
+2025-10-13 22:55:00.820 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-13 22:55:00.844 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-13 22:55:00.844 | INFO     | hyperliquid_websocket | 176 | Disconnected from Hyperliquid WebSocket (final cleanup)
+2025-10-13 22:55:00.845 | INFO     | fullon_exchange.queue.exchange_queue | 299 | Disconnected all WebSocket handlers
+2025-10-13 22:55:01.047 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-13 22:55:01.050 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-13 22:55:01.055 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-13 22:55:01.055 | INFO     | fullon_exchange.queue.exchange_queue | 344 | Disconnected all REST handlers
+2025-10-13 22:55:01.256 | INFO     | fullon_exchange.queue.exchange_queue | 82 | ✅ Shutdown_factory() completed from patched run
+2025-10-13 22:59:07.524 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:59:07.667 | INFO     | fullon_exchange.queue.exchange_queue | 101 | ✅ Patched asyncio.run() at module import for automatic clean shutdown
+2025-10-13 22:59:07.693 | INFO     | demo_data | 211 | Creating dual test databases: orm=fullon2_test_s4muukrv, ohlcv=fullon2_test_s4muukrv_ohlcv
+2025-10-13 22:59:07.693 | INFO     | demo_data | 93 | Creating isolated test database: fullon2_test_s4muukrv
+2025-10-13 22:59:07.693 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:59:07.742 | INFO     | demo_data | 132 | Test database created successfully: fullon2_test_s4muukrv
+2025-10-13 22:59:07.746 | INFO     | demo_data | 93 | Creating isolated test database: fullon2_test_s4muukrv_ohlcv
+2025-10-13 22:59:07.746 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:59:07.777 | INFO     | demo_data | 132 | Test database created successfully: fullon2_test_s4muukrv_ohlcv
+2025-10-13 22:59:07.780 | INFO     | demo_data | 219 | Dual test databases created: orm=fullon2_test_s4muukrv, ohlcv=fullon2_test_s4muukrv_ohlcv
+2025-10-13 22:59:07.780 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 22:59:07.844 | INFO     | demo_data | 310 | Starting demo data installation (matching fullon_orm)
+2025-10-13 22:59:07.907 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: kraken
+2025-10-13 22:59:07.919 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: bitmex
+2025-10-13 22:59:07.925 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: hyperliquid
+2025-10-13 22:59:07.963 | INFO     | demo_data | 347 | Demo data installation completed successfully
+2025-10-13 22:59:07.963 | INFO     | __main__ | 69 | Demo data installed successfully
+2025-10-13 22:59:07.964 | INFO     | fullon_ohlcv_service.daemon | 68 | Starting OHLCV Service Daemon
+2025-10-13 22:59:07.969 | INFO     | fullon_ohlcv_service.daemon | 78 | Loaded symbols from database symbol_count=3
+2025-10-13 22:59:07.970 | INFO     | fullon_ohlcv_service.utils.add_symbols | 64 | Starting initialization of all symbols 
+2025-10-13 22:59:07.970 | INFO     | fullon_ohlcv_service.utils.add_symbols | 75 | Found 3 symbols to initialize
+2025-10-13 22:59:07.970 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol bitmex:BTC/USD:BTC'
+2025-10-13 22:59:08.072 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol bitmex:BTC/USD:BTC
+2025-10-13 22:59:08.072 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol hyperliquid:BTC/USDC:USDC'
+2025-10-13 22:59:08.096 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol hyperliquid:BTC/USDC:USDC
+2025-10-13 22:59:08.096 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol kraken:BTC/USDC'
+2025-10-13 22:59:08.120 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol kraken:BTC/USDC
+2025-10-13 22:59:08.121 | INFO     | fullon_ohlcv_service.utils.add_symbols | 97 | Symbol initialization complete: 3/3 successful
+2025-10-13 22:59:08.121 | INFO     | fullon_cache.event_loop | 134 | Event loop configured: uvloop
+2025-10-13 22:59:08.121 | INFO     | fullon_cache.connection | 121 | uvloop configured for optimal Redis performance
+2025-10-13 22:59:08.124 | INFO     | fullon_ohlcv_service.daemon | 95 | Phase 1: Starting historic data collection (REST)
+2025-10-13 22:59:08.124 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 72 | Starting historical OHLCV collection
+2025-10-13 22:59:08.125 | INFO     | fullon_ohlcv_service.trade.historic_collector | 73 | Starting historical trade collection
+2025-10-13 22:59:08.133 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 169 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:59:08.134 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:59:08.134 | INFO     | fullon_exchange.queue.exchange_queue | 423 | ExchangeQueue factory initialized with auto-shutdown
+2025-10-13 22:59:08.367 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized bitmex REST base interface
+2025-10-13 22:59:08.368 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized bitmex exposed REST interface
+2025-10-13 22:59:08.368 | INFO     | bitmex_rest_adapter | 44 | Initialized BitMEX REST adapter with fullon_orm support
+2025-10-13 22:59:08.368 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for bitmex
+2025-10-13 22:59:08.368 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for bitmex...
+2025-10-13 22:59:08.368 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-13 22:59:08.373 | INFO     | fullon_exchange.rest.base_interface | 212 | 🌍 Direct connection - no proxy configuration found
+2025-10-13 22:59:10.586 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 106 markets
+2025-10-13 22:59:10.587 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-13 22:59:10.587 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for bitmex
+2025-10-13 22:59:10.587 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 215 | Exchange supports native OHLCV - proceeding with collection exchange=bitmex symbol_count=1
+2025-10-13 22:59:10.587 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:10.588 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized hyperliquid REST base interface
+2025-10-13 22:59:10.588 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized hyperliquid exposed REST interface
+2025-10-13 22:59:10.589 | INFO     | hyperliquid_rest_adapter | 56 | Initialized Hyperliquid REST adapter with fullon_orm support
+2025-10-13 22:59:10.589 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for hyperliquid
+2025-10-13 22:59:10.589 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for hyperliquid...
+2025-10-13 22:59:10.589 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-13 22:59:15.620 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 441 markets
+2025-10-13 22:59:15.621 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-13 22:59:15.621 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for hyperliquid
+2025-10-13 22:59:15.621 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 215 | Exchange supports native OHLCV - proceeding with collection exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:15.621 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=kraken symbol_count=1
+2025-10-13 22:59:15.625 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized kraken REST base interface
+2025-10-13 22:59:15.625 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized kraken exposed REST interface
+2025-10-13 22:59:15.626 | INFO     | kraken_rest_adapter | 43 | Initialized Kraken REST adapter with fullon_orm support
+2025-10-13 22:59:15.626 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for kraken
+2025-10-13 22:59:15.626 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for kraken...
+2025-10-13 22:59:15.626 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-13 22:59:17.691 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 1271 markets
+2025-10-13 22:59:17.694 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-13 22:59:17.694 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for kraken
+2025-10-13 22:59:17.694 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 208 | Exchange requires trade collection instead of OHLCV - skipping OHLCV collection exchange=kraken symbol_count=1
+2025-10-13 22:59:17.700 | INFO     | fullon_ohlcv_service.trade.historic_collector | 169 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:59:17.700 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:59:17.700 | INFO     | fullon_ohlcv_service.trade.historic_collector | 215 | Exchange has native OHLCV support - skipping trade collection exchange=bitmex symbol_count=1
+2025-10-13 22:59:17.700 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:17.701 | INFO     | fullon_ohlcv_service.trade.historic_collector | 215 | Exchange has native OHLCV support - skipping trade collection exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:17.701 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=kraken symbol_count=1
+2025-10-13 22:59:17.701 | INFO     | fullon_ohlcv_service.trade.historic_collector | 222 | Exchange requires trade collection for OHLCV exchange=kraken symbol_count=1
+2025-10-13 22:59:20.796 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-12 22:59:17 to 2025-10-13 06:18:27. 60050 seconds (16.7 hours) left
+2025-10-13 22:59:20.797 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-10 22:59:17 to 2025-10-11 15:39:00. 199218 seconds (2.3 days) left
+2025-10-13 22:59:20.797 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-10 22:59:17 to 2025-10-11 15:39:00. 199218 seconds (2.3 days) left
+2025-10-13 22:59:24.236 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 06:18:28 to 2025-10-13 11:27:36. 41501 seconds (11.5 hours) left
+2025-10-13 22:59:24.236 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-11 15:39:01 to 2025-10-12 08:19:00. 139218 seconds (1.6 days) left
+2025-10-13 22:59:24.247 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-11 15:39:01 to 2025-10-12 08:19:00. 139218 seconds (1.6 days) left
+2025-10-13 22:59:27.137 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 11:27:37 to 2025-10-13 11:43:34. 40544 seconds (11.3 hours) left
+2025-10-13 22:59:27.142 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-12 08:19:01 to 2025-10-13 00:59:00. 79218 seconds (22.0 hours) left
+2025-10-13 22:59:27.142 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-12 08:19:01 to 2025-10-13 00:59:00. 79218 seconds (22.0 hours) left
+2025-10-13 22:59:30.046 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USDC:USDC:hyperliquid from 2025-10-13 00:59:01 to 2025-10-13 17:39:00. 19218 seconds (5.3 hours) left
+2025-10-13 22:59:30.049 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 11:43:35 to 2025-10-13 13:31:33. 34064 seconds (9.5 hours) left
+2025-10-13 22:59:30.050 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 1000 candles for BTC/USD:BTC:bitmex from 2025-10-13 00:59:01 to 2025-10-13 17:39:00. 19218 seconds (5.3 hours) left
+2025-10-13 22:59:32.646 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 319 candles for BTC/USD:BTC:bitmex from 2025-10-13 17:39:01 to 2025-10-13 22:58:00. 78 seconds (1.3 minutes) left
+2025-10-13 22:59:32.647 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 995 trades for BTC/USDC:kraken from 2025-10-13 13:31:34 to 2025-10-13 17:07:00. 21137 seconds (5.9 hours) left
+2025-10-13 22:59:32.647 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 352 | Retrieved 320 candles for BTC/USDC:USDC:hyperliquid from 2025-10-13 17:39:01 to 2025-10-13 22:59:00. 18 seconds left
+2025-10-13 22:59:34.143 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 241 | Historical collection completed for symbol symbol=bitmex:BTC/USD:BTC candles_collected=4319
+2025-10-13 22:59:34.143 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 241 | Historical collection completed for symbol symbol=hyperliquid:BTC/USDC:USDC candles_collected=4320
+2025-10-13 22:59:34.144 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 114 | Historical collection completed total_symbols=2 total_candles=8639
+2025-10-13 22:59:34.172 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 17:07:01 to 2025-10-13 21:34:56. 5062 seconds (1.4 hours) left
+2025-10-13 22:59:34.571 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 122 trades for BTC/USDC:kraken from 2025-10-13 21:34:57 to 2025-10-13 22:59:02. 16 seconds left
+2025-10-13 22:59:35.167 | INFO     | fullon_ohlcv_service.trade.historic_collector | 248 | Historical collection completed for symbol symbol=kraken:BTC/USDC trades_collected=6117
+2025-10-13 22:59:35.168 | INFO     | fullon_ohlcv_service.trade.historic_collector | 115 | Historical collection completed total_symbols=1 total_trades=6117
+2025-10-13 22:59:35.168 | INFO     | fullon_ohlcv_service.daemon | 100 | Phase 1: Historic collection completed
+2025-10-13 22:59:35.168 | INFO     | fullon_ohlcv_service.daemon | 109 | Phase 2: Starting live data streaming (WebSocket)
+2025-10-13 22:59:35.168 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 46 | Starting live OHLCV collection
+2025-10-13 22:59:35.169 | INFO     | fullon_ohlcv_service.trade.live_collector | 45 | Starting live trade collection
+2025-10-13 22:59:35.175 | INFO     | fullon_ohlcv_service.trade.live_collector | 92 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:59:35.176 | INFO     | fullon_ohlcv_service.trade.live_collector | 113 | Starting WebSocket for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:59:35.279 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized bitmex WebSocket base interface
+2025-10-13 22:59:35.280 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized bitmex exposed WebSocket interface
+2025-10-13 22:59:35.280 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for bitmex
+2025-10-13 22:59:35.282 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for bitmex...
+2025-10-13 22:59:35.282 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-13 22:59:35.282 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-13 22:59:35.288 | INFO     | fullon_exchange.websocket.base_interface | 145 | 🔍 DEBUG - CCXT instance proxy settings:
+2025-10-13 22:59:35.288 | INFO     | fullon_exchange.websocket.base_interface | 159 |    aiohttp_proxy: None
+2025-10-13 22:59:35.288 | INFO     | fullon_exchange.websocket.base_interface | 159 |    aiohttp_trust_env: True
+2025-10-13 22:59:35.289 | INFO     | fullon_exchange.websocket.base_interface | 159 |    proxies: None
+2025-10-13 22:59:35.289 | INFO     | fullon_exchange.websocket.base_interface | 159 |    session: None
+2025-10-13 22:59:35.289 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 86 | Loaded data symbol_count=3 exchange_count=3
+2025-10-13 22:59:35.289 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=bitmex symbol_count=1
+2025-10-13 22:59:37.272 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-13 22:59:37.272 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:59:37.272 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 1.99s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:59:37.272 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for bitmex
+2025-10-13 22:59:37.273 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 132 | Exchange supports native OHLCV - proceeding with subscription exchange=bitmex symbol_count=1
+2025-10-13 22:59:37.275 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USD:BTC
+2025-10-13 22:59:37.275 | INFO     | bitmex_websocket | 123 | Created subscription: subscribe_trades (1760396377.2758014)
+2025-10-13 22:59:37.276 | INFO     | fullon_ohlcv_service.trade.live_collector | 152 | Subscription result exchange=bitmex symbol=BTC/USD:BTC success=True
+2025-10-13 22:59:37.276 | INFO     | fullon_ohlcv_service.trade.batcher | 52 | GlobalTradeBatcher initialized
+2025-10-13 22:59:37.276 | INFO     | fullon_ohlcv_service.trade.batcher | 105 | Batch processing started
+2025-10-13 22:59:37.276 | INFO     | fullon_ohlcv_service.trade.live_collector | 171 | Finished subscribing to trades exchange=bitmex symbol_count=1
+2025-10-13 22:59:37.276 | INFO     | fullon_ohlcv_service.trade.live_collector | 113 | Starting WebSocket for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:37.291 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized hyperliquid WebSocket base interface
+2025-10-13 22:59:37.292 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized hyperliquid exposed WebSocket interface
+2025-10-13 22:59:37.292 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for hyperliquid
+2025-10-13 22:59:37.292 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for hyperliquid...
+2025-10-13 22:59:37.292 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-13 22:59:37.292 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-13 22:59:37.391 | INFO     | fullon_exchange.websocket.exposed_interface | 608 | Started OHLCV subscription for BTC/USD:BTC (1m)
+2025-10-13 22:59:37.391 | INFO     | bitmex_websocket | 123 | Created subscription: subscribe_ohlcv (1760396377.3917127)
+2025-10-13 22:59:37.391 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 166 | Subscription result exchange=bitmex symbol=BTC/USD:BTC success=True
+2025-10-13 22:59:37.392 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 183 | Finished subscribing to OHLCV exchange=bitmex symbol_count=1
+2025-10-13 22:59:37.392 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:43.439 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-13 22:59:43.440 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': False, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:59:43.440 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 6.15s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': False, 'orders': True, 'positions': True, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:59:43.440 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for hyperliquid
+2025-10-13 22:59:43.441 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 132 | Exchange supports native OHLCV - proceeding with subscription exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:43.445 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USDC:USDC
+2025-10-13 22:59:43.445 | INFO     | hyperliquid_websocket | 136 | Created subscription: subscribe_trades (1760396383.445758)
+2025-10-13 22:59:43.445 | INFO     | fullon_ohlcv_service.trade.live_collector | 152 | Subscription result exchange=hyperliquid symbol=BTC/USDC:USDC success=True
+2025-10-13 22:59:43.446 | INFO     | fullon_ohlcv_service.trade.live_collector | 171 | Finished subscribing to trades exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:43.446 | INFO     | fullon_ohlcv_service.trade.live_collector | 113 | Starting WebSocket for exchange exchange=kraken symbol_count=1
+2025-10-13 22:59:43.447 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized kraken WebSocket base interface
+2025-10-13 22:59:43.447 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized kraken exposed WebSocket interface
+2025-10-13 22:59:43.447 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for kraken
+2025-10-13 22:59:43.447 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for kraken...
+2025-10-13 22:59:43.448 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-13 22:59:43.448 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-13 22:59:43.458 | INFO     | fullon_exchange.websocket.exposed_interface | 608 | Started OHLCV subscription for BTC/USDC:USDC (1m)
+2025-10-13 22:59:43.458 | INFO     | hyperliquid_websocket | 136 | Created subscription: subscribe_ohlcv (1760396383.4587107)
+2025-10-13 22:59:43.458 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 166 | Subscription result exchange=hyperliquid symbol=BTC/USDC:USDC success=True
+2025-10-13 22:59:43.459 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 183 | Finished subscribing to OHLCV exchange=hyperliquid symbol_count=1
+2025-10-13 22:59:43.459 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=kraken symbol_count=1
+2025-10-13 22:59:46.444 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-13 22:59:46.445 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': False, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:59:46.445 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 3.00s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': False, 'ohlcv': True, 'my_trades': True}}
+2025-10-13 22:59:46.445 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for kraken
+2025-10-13 22:59:46.446 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 122 | Exchange requires trade collection instead of OHLCV - skipping OHLCV subscription exchange=kraken symbol_count=1
+2025-10-13 22:59:46.448 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USDC
+2025-10-13 22:59:46.448 | INFO     | kraken_websocket | 135 | Created subscription: subscribe_trades (1760396386.4482393)
+2025-10-13 22:59:46.448 | INFO     | fullon_ohlcv_service.trade.live_collector | 152 | Subscription result exchange=kraken symbol=BTC/USDC success=True
+2025-10-13 22:59:46.448 | INFO     | fullon_ohlcv_service.trade.live_collector | 171 | Finished subscribing to trades exchange=kraken symbol_count=1
+2025-10-13 22:59:46.449 | INFO     | fullon_ohlcv_service.daemon | 222 | Starting daemon cleanup
+2025-10-13 22:59:46.449 | INFO     | fullon_ohlcv_service.trade.live_collector | 73 | Stopping live trade collection
+2025-10-13 22:59:46.449 | INFO     | fullon_ohlcv_service.trade.batcher | 87 | Symbol unregistered from batch processing exchange=kraken symbol=BTC/USDC remaining_symbols=2
+2025-10-13 22:59:46.449 | INFO     | fullon_ohlcv_service.trade.batcher | 87 | Symbol unregistered from batch processing exchange=bitmex symbol=BTC/USD:BTC remaining_symbols=1
+2025-10-13 22:59:46.449 | INFO     | fullon_ohlcv_service.trade.batcher | 87 | Symbol unregistered from batch processing exchange=hyperliquid symbol=BTC/USDC:USDC remaining_symbols=0
+2025-10-13 22:59:46.451 | INFO     | fullon_ohlcv_service.trade.batcher | 116 | Batch processing stopped
+2025-10-13 22:59:46.459 | INFO     | fullon_ohlcv_service.daemon | 244 | Daemon cleanup completed successfully
+2025-10-13 23:00:00.001 | INFO     | fullon_ohlcv_service.daemon | 222 | Starting daemon cleanup
+2025-10-13 23:00:00.001 | INFO     | fullon_ohlcv_service.trade.live_collector | 73 | Stopping live trade collection
+2025-10-13 23:00:00.003 | INFO     | fullon_ohlcv_service.daemon | 244 | Daemon cleanup completed successfully
+2025-10-13 23:00:00.005 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: bitmex.btc_usd_btc_candles1m_view
+2025-10-13 23:00:00.019 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: hyperliquid.btc_usdc_usdc_candles1m_view
+2025-10-13 23:00:00.037 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: kraken.btc_usdc_candles1m_view
+2025-10-13 23:00:00.053 | INFO     | demo_data | 233 | Dropping dual test databases: orm=fullon2_test_s4muukrv, ohlcv=fullon2_test_s4muukrv_ohlcv
+2025-10-13 23:00:00.053 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 23:00:00.133 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-13 23:00:00.153 | INFO     | demo_data | 240 | Dual test databases dropped: orm=fullon2_test_s4muukrv, ohlcv=fullon2_test_s4muukrv_ohlcv
+2025-10-13 23:00:00.153 | INFO     | fullon_exchange.queue.exchange_queue | 73 | 📋 Patched asyncio.run() finally block - initiating cleanup
+2025-10-13 23:00:00.153 | INFO     | fullon_exchange.queue.exchange_queue | 80 | 🛡️ Calling shutdown_factory() with shield protection
+2025-10-13 23:00:00.154 | INFO     | fullon_exchange.queue.exchange_queue | 251 | 🔄 Starting factory shutdown...
+2025-10-13 23:00:00.154 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-13 23:00:00.154 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-13 23:00:00.154 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-13 23:00:00.634 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-13 23:00:00.634 | INFO     | kraken_websocket | 151 | Disconnected from Kraken WebSocket (final cleanup)
+2025-10-13 23:00:00.821 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-13 23:00:00.821 | INFO     | hyperliquid_websocket | 176 | Disconnected from Hyperliquid WebSocket (final cleanup)
+2025-10-13 23:00:00.838 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-13 23:00:00.838 | INFO     | fullon_exchange.queue.exchange_queue | 299 | Disconnected all WebSocket handlers
+2025-10-13 23:00:01.040 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-13 23:00:01.042 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-13 23:00:01.046 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-13 23:00:01.047 | INFO     | fullon_exchange.queue.exchange_queue | 344 | Disconnected all REST handlers
+2025-10-13 23:00:01.247 | INFO     | fullon_exchange.queue.exchange_queue | 82 | ✅ Shutdown_factory() completed from patched run
+2025-10-14 02:45:47.897 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-14 02:45:48.099 | INFO     | fullon_exchange.queue.exchange_queue | 101 | ✅ Patched asyncio.run() at module import for automatic clean shutdown
+2025-10-14 02:45:48.108 | INFO     | demo_data | 211 | Creating dual test databases: orm=fullon2_test_n5d6lm38, ohlcv=fullon2_test_n5d6lm38_ohlcv
+2025-10-14 02:45:48.109 | INFO     | demo_data | 93 | Creating isolated test database: fullon2_test_n5d6lm38
+2025-10-14 02:45:48.109 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-14 02:45:48.210 | INFO     | demo_data | 132 | Test database created successfully: fullon2_test_n5d6lm38
+2025-10-14 02:45:48.219 | INFO     | demo_data | 93 | Creating isolated test database: fullon2_test_n5d6lm38_ohlcv
+2025-10-14 02:45:48.220 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-14 02:45:48.271 | INFO     | demo_data | 132 | Test database created successfully: fullon2_test_n5d6lm38_ohlcv
+2025-10-14 02:45:48.274 | INFO     | demo_data | 219 | Dual test databases created: orm=fullon2_test_n5d6lm38, ohlcv=fullon2_test_n5d6lm38_ohlcv
+2025-10-14 02:45:48.274 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-14 02:45:48.328 | INFO     | demo_data | 310 | Starting demo data installation (matching fullon_orm)
+2025-10-14 02:45:48.387 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: kraken
+2025-10-14 02:45:48.396 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: bitmex
+2025-10-14 02:45:48.407 | INFO     | fullon_orm.repositories.exchange | 394 | Created new category exchange: hyperliquid
+2025-10-14 02:45:48.429 | INFO     | demo_data | 347 | Demo data installation completed successfully
+2025-10-14 02:45:48.430 | INFO     | __main__ | 74 | Demo data installed successfully
+2025-10-14 02:45:48.433 | INFO     | __main__ | 94 | Loaded symbol symbol=BTC/USDC exchange=kraken
+2025-10-14 02:45:48.433 | INFO     | fullon_ohlcv_service.utils.add_symbols | 64 | Starting initialization of all symbols 
+2025-10-14 02:45:48.433 | INFO     | fullon_ohlcv_service.utils.add_symbols | 75 | Found 1 symbols to initialize
+2025-10-14 02:45:48.433 | INFO     | fullon_ohlcv_service.utils.add_symbols | 31 | Initializing symbol kraken:BTC/USDC'
+2025-10-14 02:45:48.546 | INFO     | fullon_ohlcv_service.utils.add_symbols | 37 | Successfully initialized symbol kraken:BTC/USDC
+2025-10-14 02:45:48.546 | INFO     | fullon_ohlcv_service.utils.add_symbols | 97 | Symbol initialization complete: 1/1 successful
+2025-10-14 02:45:48.546 | INFO     | fullon_ohlcv_service.daemon | 171 | Starting two-phase collection for single symbol symbol=BTC/USDC exchange=kraken
+2025-10-14 02:45:48.546 | INFO     | fullon_ohlcv_service.daemon | 180 | Phase 1: Starting historic collection
+2025-10-14 02:45:48.551 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 189 | Starting historical collection for exchange exchange=kraken symbol_count=1
+2025-10-14 02:45:48.551 | INFO     | fullon_exchange.queue.exchange_queue | 423 | ExchangeQueue factory initialized with auto-shutdown
+2025-10-14 02:45:48.894 | INFO     | fullon_exchange.rest.base_interface | 79 | Initialized kraken REST base interface
+2025-10-14 02:45:48.894 | INFO     | fullon_exchange.rest.exposed_interface | 66 | Initialized kraken exposed REST interface
+2025-10-14 02:45:48.895 | INFO     | kraken_rest_adapter | 43 | Initialized Kraken REST adapter with fullon_orm support
+2025-10-14 02:45:48.895 | INFO     | fullon_exchange.rest.interface | 111 | Created REST handler for kraken
+2025-10-14 02:45:48.895 | INFO     | fullon_exchange.queue.exchange_queue | 594 | Connecting REST handler for kraken...
+2025-10-14 02:45:48.895 | INFO     | fullon_exchange.rest.base_interface | 324 | Connecting to exchange
+2025-10-14 02:45:49.751 | INFO     | fullon_exchange.rest.base_interface | 389 | Loaded 1271 markets
+2025-10-14 02:45:49.754 | INFO     | fullon_exchange.rest.base_interface | 336 | Successfully connected to exchange
+2025-10-14 02:45:49.754 | INFO     | fullon_exchange.queue.exchange_queue | 596 | Connected REST handler for kraken
+2025-10-14 02:45:49.754 | INFO     | fullon_ohlcv_service.ohlcv.historic_collector | 208 | Exchange requires trade collection instead of OHLCV - skipping OHLCV collection exchange=kraken symbol_count=1
+2025-10-14 02:45:49.758 | INFO     | fullon_ohlcv_service.trade.historic_collector | 190 | Starting historical collection for exchange exchange=kraken symbol_count=1
+2025-10-14 02:45:49.758 | INFO     | fullon_ohlcv_service.trade.historic_collector | 222 | Exchange requires trade collection for OHLCV exchange=kraken symbol_count=1
+2025-10-14 02:45:49.758 | INFO     | fullon_cache.event_loop | 134 | Event loop configured: uvloop
+2025-10-14 02:45:49.759 | INFO     | fullon_cache.connection | 121 | uvloop configured for optimal Redis performance
+2025-10-14 02:45:50.115 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 02:45:49 to 2025-10-13 09:14:18. 63091 seconds (17.5 hours) left
+2025-10-14 02:45:50.781 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 09:14:19 to 2025-10-13 11:34:28. 54681 seconds (15.2 hours) left
+2025-10-14 02:45:51.535 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 998 trades for BTC/USDC:kraken from 2025-10-13 11:34:29 to 2025-10-13 11:52:03. 53626 seconds (14.9 hours) left
+2025-10-14 02:45:52.020 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 11:52:04 to 2025-10-13 14:35:13. 43836 seconds (12.2 hours) left
+2025-10-14 02:45:52.545 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 14:35:14 to 2025-10-13 19:17:34. 26895 seconds (7.5 hours) left
+2025-10-14 02:45:53.394 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 1000 trades for BTC/USDC:kraken from 2025-10-13 19:17:35 to 2025-10-14 02:38:05. 464 seconds (7.7 minutes) left
+2025-10-14 02:45:53.939 | INFO     | fullon_ohlcv_service.trade.historic_collector | 341 | Retrieved 12 trades for BTC/USDC:kraken from 2025-10-14 02:38:06 to 2025-10-14 02:45:02. 48 seconds left
+2025-10-14 02:45:54.475 | INFO     | fullon_ohlcv_service.trade.historic_collector | 248 | Historical collection completed for symbol symbol=kraken:BTC/USDC trades_collected=6010
+2025-10-14 02:45:54.475 | INFO     | fullon_ohlcv_service.daemon | 188 | Phase 1: Historic collection completed
+2025-10-14 02:45:54.475 | INFO     | fullon_ohlcv_service.daemon | 197 | Phase 2: Starting live streaming
+2025-10-14 02:45:54.476 | INFO     | fullon_ohlcv_service.daemon | 211 | Starting live collectors for symbol symbol=BTC/USDC
+2025-10-14 02:45:54.479 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 107 | Starting WebSocket for exchange exchange=kraken symbol_count=1
+2025-10-14 02:45:54.662 | INFO     | fullon_exchange.websocket.base_interface | 86 | Initialized kraken WebSocket base interface
+2025-10-14 02:45:54.662 | INFO     | fullon_exchange.websocket.exposed_interface | 136 | Initialized kraken exposed WebSocket interface
+2025-10-14 02:45:54.662 | INFO     | fullon_exchange.websocket.interface | 111 | Created WebSocket handler for kraken
+2025-10-14 02:45:54.663 | INFO     | fullon_exchange.queue.exchange_queue | 720 | Connecting WebSocket handler for kraken...
+2025-10-14 02:45:54.663 | INFO     | fullon_exchange.websocket.base_interface | 359 | Connecting WebSocket to exchange
+2025-10-14 02:45:54.663 | INFO     | fullon_exchange.websocket.base_interface | 249 | 🌍 Direct connection - no proxy environment variables found
+2025-10-14 02:45:57.052 | INFO     | fullon_exchange.websocket.base_interface | 452 | WebSocket connection validated successfully
+2025-10-14 02:45:57.052 | INFO     | fullon_exchange.websocket.base_interface | 729 | Detected WebSocket capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': False, 'ohlcv': True, 'my_trades': True}}
+2025-10-14 02:45:57.053 | INFO     | fullon_exchange.websocket.base_interface | 377 | WebSocket connected successfully in 2.39s. Capabilities: {{'ticker': True, 'trades': True, 'order_book': True, 'balance': True, 'orders': True, 'positions': False, 'ohlcv': True, 'my_trades': True}}
+2025-10-14 02:45:57.053 | INFO     | fullon_exchange.queue.exchange_queue | 722 | Connected WebSocket handler for kraken
+2025-10-14 02:45:57.053 | INFO     | fullon_ohlcv_service.ohlcv.live_collector | 122 | Exchange requires trade collection instead of OHLCV - skipping OHLCV subscription exchange=kraken symbol_count=1
+2025-10-14 02:45:57.056 | INFO     | fullon_ohlcv_service.trade.live_collector | 115 | Starting WebSocket for exchange exchange=kraken symbol_count=1
+2025-10-14 02:45:57.057 | INFO     | fullon_exchange.websocket.exposed_interface | 420 | Started trades subscription for BTC/USDC
+2025-10-14 02:45:57.057 | INFO     | kraken_websocket | 135 | Created subscription: subscribe_trades (1760409957.0578392)
+2025-10-14 02:45:57.057 | INFO     | fullon_ohlcv_service.trade.live_collector | 154 | Subscription result exchange=kraken symbol=BTC/USDC success=True
+2025-10-14 02:45:57.058 | INFO     | fullon_ohlcv_service.trade.batcher | 52 | GlobalTradeBatcher initialized
+2025-10-14 02:45:57.058 | INFO     | fullon_ohlcv_service.trade.batcher | 105 | Batch processing started
+2025-10-14 02:45:57.058 | INFO     | fullon_ohlcv_service.trade.live_collector | 173 | Finished subscribing to trades exchange=kraken symbol_count=1
+2025-10-14 02:45:59.916 | INFO     | fullon_ohlcv_service.trade.batcher | 230 | Symbol batch processed successfully symbol=kraken:BTC/USDC trades_count=1 source=Redis destination=PostgreSQL
+2025-10-14 02:45:59.916 | INFO     | fullon_ohlcv_service.trade.batcher | 249 | Batch cycle completed symbols_with_trades=1 total_symbols=1 total_trades=1 duration_seconds=0.02
+2025-10-14 02:46:01.059 | INFO     | fullon_ohlcv.repositories.ohlcv.timeseries_repository | 91 | Initialized with continuous aggregate view: kraken.btc_usdc_candles1m_view
+2025-10-14 02:46:01.078 | INFO     | demo_data | 233 | Dropping dual test databases: orm=fullon2_test_n5d6lm38, ohlcv=fullon2_test_n5d6lm38_ohlcv
+2025-10-14 02:46:01.078 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-14 02:46:01.252 | INFO     | fullon_orm.uvloop_integration | 64 | uvloop event loop policy successfully installed
+2025-10-14 02:46:01.277 | INFO     | demo_data | 240 | Dual test databases dropped: orm=fullon2_test_n5d6lm38, ohlcv=fullon2_test_n5d6lm38_ohlcv
+2025-10-14 02:46:01.277 | INFO     | fullon_exchange.queue.exchange_queue | 73 | 📋 Patched asyncio.run() finally block - initiating cleanup
+2025-10-14 02:46:01.278 | INFO     | fullon_exchange.queue.exchange_queue | 80 | 🛡️ Calling shutdown_factory() with shield protection
+2025-10-14 02:46:01.278 | INFO     | fullon_exchange.queue.exchange_queue | 251 | 🔄 Starting factory shutdown...
+2025-10-14 02:46:01.278 | INFO     | fullon_exchange.websocket.exposed_interface | 331 | Disconnecting WebSocket interface
+2025-10-14 02:46:01.710 | INFO     | fullon_exchange.websocket.base_interface | 560 | WebSocket disconnected (final cleanup)
+2025-10-14 02:46:01.711 | INFO     | kraken_websocket | 151 | Disconnected from Kraken WebSocket (final cleanup)
+2025-10-14 02:46:01.711 | INFO     | fullon_exchange.queue.exchange_queue | 299 | Disconnected all WebSocket handlers
+2025-10-14 02:46:01.916 | INFO     | fullon_exchange.rest.base_interface | 366 | Disconnected from exchange
+2025-10-14 02:46:01.917 | INFO     | fullon_exchange.queue.exchange_queue | 344 | Disconnected all REST handlers
+2025-10-14 02:46:02.117 | INFO     | fullon_exchange.queue.exchange_queue | 82 | ✅ Shutdown_factory() completed from patched run

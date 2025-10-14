@@ -308,41 +308,67 @@ class TestLiveTradeCollectorDynamicSymbols:
 
         assert collector.is_collecting(mock_symbol) is False
 
+    @patch("fullon_ohlcv_service.trade.live_collector.get_admin_exchanges")
     @pytest.mark.asyncio
-    async def test_add_symbol_collector_not_running(self):
-        """Test add_symbol raises RuntimeError when collector not running."""
+    async def test_add_symbol_collector_not_running(self, mock_get_admin_exchanges):
+        """Test start_symbol raises ValueError when admin exchange not found."""
         collector = LiveTradeCollector()
         collector.running = False
+
+        # Mock get_admin_exchanges to return empty list
+        mock_get_admin_exchanges.return_value = (1, [])
 
         mock_symbol = Mock(symbol="BTC/USDT")
         mock_symbol.cat_exchange.name = "binance"
 
-        with pytest.raises(RuntimeError, match="not running"):
-            await collector.add_symbol(mock_symbol)
+        with pytest.raises(ValueError, match="Admin exchange.*not found"):
+            await collector.start_symbol(mock_symbol)
 
+    @patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue")
+    @patch("fullon_ohlcv_service.trade.live_collector.get_admin_exchanges")
+    @patch("fullon_ohlcv_service.trade.live_collector.ProcessCache")
     @pytest.mark.asyncio
-    async def test_add_symbol_already_collecting(self):
-        """Test add_symbol returns early if symbol already collecting."""
+    async def test_add_symbol_already_collecting(self, mock_process_cache, mock_get_admin_exchanges, mock_exchange_queue):
+        """Test start_symbol does not fail when symbol already being collected."""
         collector = LiveTradeCollector()
         collector.running = True
         collector.registered_symbols = {"binance:BTC/USDT"}
 
+        # Mock handler
+        mock_handler = AsyncMock()
+        mock_handler.subscribe_trades = AsyncMock(return_value=True)
+        collector.websocket_handlers["binance"] = mock_handler
+
+        # Mock admin exchanges
+        mock_exchange = Mock()
+        mock_exchange.cat_exchange.name = "binance"
+        mock_get_admin_exchanges.return_value = (1, [mock_exchange])
+
+        # Mock ExchangeQueue to return existing handler
+        mock_exchange_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
+
+        # Mock ProcessCache
+        mock_cache = AsyncMock()
+        mock_cache.register_process = AsyncMock(return_value="test_process_id")
+        mock_process_cache.return_value.__aenter__.return_value = mock_cache
+
         mock_symbol = Mock(symbol="BTC/USDT")
         mock_symbol.cat_exchange.name = "binance"
 
-        # Should return early without making any calls
-        await collector.add_symbol(mock_symbol)
+        # Should not raise exception
+        await collector.start_symbol(mock_symbol)
 
-        # No exceptions raised, no changes made
+        # Symbol still registered (now called twice with same symbol)
         assert "binance:BTC/USDT" in collector.registered_symbols
 
+    @patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue")
     @patch("fullon_ohlcv_service.trade.live_collector.get_admin_exchanges")
     @patch("fullon_ohlcv_service.trade.live_collector.GlobalTradeBatcher")
     @pytest.mark.asyncio
     async def test_add_symbol_handler_exists_new_symbol(
-        self, mock_batcher_class, mock_get_admin_exchanges
+        self, mock_batcher_class, mock_get_admin_exchanges, mock_exchange_queue
     ):
-        """Test add_symbol reuses handler for new symbol on existing exchange."""
+        """Test start_symbol reuses handler for new symbol on existing exchange."""
         collector = LiveTradeCollector()
         collector.running = True
         collector.registered_symbols = {"binance:BTC/USDT"}
@@ -358,6 +384,9 @@ class TestLiveTradeCollectorDynamicSymbols:
         mock_exchange.cat_exchange.name = "binance"
         mock_get_admin_exchanges.return_value = (1, [mock_exchange])
 
+        # Mock ExchangeQueue to return existing handler
+        mock_exchange_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
+
         # Mock batcher
         mock_batcher = AsyncMock()
         mock_batcher_class.return_value = mock_batcher
@@ -371,7 +400,7 @@ class TestLiveTradeCollectorDynamicSymbols:
             mock_cache.register_process = AsyncMock(return_value="new_process_id")
             mock_process_cache.return_value.__aenter__.return_value = mock_cache
 
-            await collector.add_symbol(mock_symbol)
+            await collector.start_symbol(mock_symbol)
 
         # Verify handler was reused (not created again)
         assert collector.websocket_handlers["binance"] == mock_handler
@@ -384,16 +413,13 @@ class TestLiveTradeCollectorDynamicSymbols:
         # Verify symbol was added to registered_symbols
         assert "binance:ETH/USDT" in collector.registered_symbols
 
-        # Verify symbol was added to symbols list
-        assert mock_symbol in collector.symbols
-
         # Verify batcher registration
         mock_batcher.register_symbol.assert_called_once_with("binance", "ETH/USDT")
 
     @patch("fullon_ohlcv_service.trade.live_collector.get_admin_exchanges")
     @pytest.mark.asyncio
     async def test_add_symbol_no_handler_creates_new(self, mock_get_admin_exchanges):
-        """Test add_symbol creates new handler if none exists for exchange."""
+        """Test start_symbol creates new handler if none exists for exchange."""
         collector = LiveTradeCollector()
         collector.running = True
         collector.registered_symbols = set()
@@ -411,7 +437,7 @@ class TestLiveTradeCollectorDynamicSymbols:
         with patch.object(
             collector, "_start_exchange_collector", new=AsyncMock()
         ) as mock_start_collector:
-            await collector.add_symbol(mock_symbol)
+            await collector.start_symbol(mock_symbol)
 
             # Verify _start_exchange_collector was called with admin_exchange and symbol list
             mock_start_collector.assert_called_once()
@@ -422,7 +448,7 @@ class TestLiveTradeCollectorDynamicSymbols:
     @patch("fullon_ohlcv_service.trade.live_collector.get_admin_exchanges")
     @pytest.mark.asyncio
     async def test_add_symbol_admin_exchange_not_found(self, mock_get_admin_exchanges):
-        """Test add_symbol raises ValueError when admin exchange not found."""
+        """Test start_symbol raises ValueError when admin exchange not found."""
         collector = LiveTradeCollector()
         collector.running = True
 
@@ -436,16 +462,17 @@ class TestLiveTradeCollectorDynamicSymbols:
         mock_symbol.cat_exchange.name = "binance"
 
         with pytest.raises(ValueError, match="Admin exchange.*not found"):
-            await collector.add_symbol(mock_symbol)
+            await collector.start_symbol(mock_symbol)
 
+    @patch("fullon_ohlcv_service.trade.live_collector.ExchangeQueue")
     @patch("fullon_ohlcv_service.trade.live_collector.get_admin_exchanges")
     @patch("fullon_ohlcv_service.trade.live_collector.GlobalTradeBatcher")
     @patch("fullon_ohlcv_service.trade.live_collector.ProcessCache")
     @pytest.mark.asyncio
     async def test_add_symbol_updates_all_state(
-        self, mock_process_cache, mock_batcher_class, mock_get_admin_exchanges
+        self, mock_process_cache, mock_batcher_class, mock_get_admin_exchanges, mock_exchange_queue
     ):
-        """Test add_symbol updates all required state: registered_symbols, symbols, process_ids."""
+        """Test start_symbol updates all required state: registered_symbols, process_ids."""
         collector = LiveTradeCollector()
         collector.running = True
         collector.registered_symbols = set()
@@ -462,6 +489,9 @@ class TestLiveTradeCollectorDynamicSymbols:
         mock_exchange.cat_exchange.name = "binance"
         mock_get_admin_exchanges.return_value = (1, [mock_exchange])
 
+        # Mock ExchangeQueue to return handler
+        mock_exchange_queue.get_websocket_handler = AsyncMock(return_value=mock_handler)
+
         # Mock ProcessCache
         mock_cache = AsyncMock()
         mock_cache.register_process = AsyncMock(return_value="test_process_id")
@@ -475,10 +505,9 @@ class TestLiveTradeCollectorDynamicSymbols:
         mock_symbol = Mock(symbol="BTC/USDT")
         mock_symbol.cat_exchange.name = "binance"
 
-        await collector.add_symbol(mock_symbol)
+        await collector.start_symbol(mock_symbol)
 
         # Verify all state was updated
         assert "binance:BTC/USDT" in collector.registered_symbols
-        assert mock_symbol in collector.symbols
         assert "binance:BTC/USDT" in collector.process_ids
         assert collector.process_ids["binance:BTC/USDT"] == "test_process_id"

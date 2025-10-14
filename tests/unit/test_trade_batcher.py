@@ -257,9 +257,10 @@ class TestGlobalTradeBatcher:
         batcher = GlobalTradeBatcher()
         batcher.active_symbols = {"binance:BTC/USDT", "kraken:ETH/USD"}
 
-        # Mock the cache to return some trades for first symbol
+        # Mock the cache context manager to return some trades
         mock_cache = AsyncMock()
-        mock_trades_cache.return_value = mock_cache
+        mock_trades_cache.return_value.__aenter__.return_value = mock_cache
+        mock_trades_cache.return_value.__aexit__.return_value = None
 
         mock_trades = [
             MagicMock(symbol="BTC/USDT", price=50000, volume=1.0, timestamp=1234567890, side="buy"),
@@ -281,7 +282,7 @@ class TestGlobalTradeBatcher:
         # Process batch
         await batcher._process_batch()
 
-        # Verify both symbols were processed
+        # Verify both symbols were processed (get_trades should be called twice)
         assert mock_cache.get_trades.call_count == 2
         mock_cache.get_trades.assert_any_call("BTC/USDT", "binance")
         mock_cache.get_trades.assert_any_call("ETH/USD", "kraken")

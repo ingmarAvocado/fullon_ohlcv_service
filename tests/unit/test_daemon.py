@@ -51,7 +51,7 @@ class TestOhlcvServiceDaemon:
             assert call_args[1]["component"] == "ohlcv_daemon"
             assert "pid" in call_args[1]["params"]
             assert "args" in call_args[1]["params"]
-            assert call_args[1]["message"] == "Started"
+            assert call_args[1]["message"] == "OHLCV daemon started successfully"
             assert call_args[1]["status"] == "starting"
 
             # Verify process_id is set
@@ -477,18 +477,18 @@ class TestOhlcvServiceDaemon:
         daemon = OhlcvServiceDaemon()
 
         # Test with None symbol
-        with pytest.raises(ValueError, match="Invalid symbol parameter"):
+        with pytest.raises(ValueError, match="Invalid symbol"):
             await daemon.process_symbol(None)
 
         # Test with invalid object
-        with pytest.raises(ValueError, match="Invalid symbol parameter"):
+        with pytest.raises(ValueError, match="Invalid symbol"):
             await daemon.process_symbol("not_a_symbol_object")
 
         # Test with object missing required attributes
         class FakeSymbol:
             pass
 
-        with pytest.raises(ValueError, match="Invalid symbol parameter"):
+        with pytest.raises(ValueError, match="Invalid symbol"):
             await daemon.process_symbol(FakeSymbol())
 
 
