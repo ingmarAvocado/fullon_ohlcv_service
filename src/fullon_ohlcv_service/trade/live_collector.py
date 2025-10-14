@@ -6,6 +6,7 @@ Implements clean fullon ecosystem integration patterns.
 """
 
 import asyncio
+import time
 
 from fullon_cache import ProcessCache, TradesCache
 from fullon_cache.process_cache import ProcessStatus, ProcessType
@@ -34,6 +35,7 @@ class LiveTradeCollector:
         self.websocket_handlers = {}
         self.registered_symbols = set()
         self.process_ids = {}  # Track process IDs per symbol
+        self.last_process_update = {}  # Track last update time per symbol (for rate-limiting)
 
     async def start_collection(self) -> None:
         """Start live trade collection for all configured symbols."""
@@ -203,15 +205,21 @@ class LiveTradeCollector:
                     # Update trade status for exchange
                     await cache.update_trade_status(key=exchange_name)
 
-                # Update process status
+                # Update process status (rate-limited to once per 30 seconds)
                 symbol_key = f"{exchange_name}:{trade_obj.symbol}"
                 if symbol_key in self.process_ids:
-                    async with ProcessCache() as cache:
-                        await cache.update_process(
-                            process_id=self.process_ids[symbol_key],
-                            status=ProcessStatus.RUNNING,
-                            message=f"Received trade at {trade_obj.time}",
-                        )
+                    current_time = time.time()
+                    last_update = self.last_process_update.get(symbol_key, 0)
+
+                    # Only update if 30 seconds have passed since last update
+                    if current_time - last_update >= 30:
+                        async with ProcessCache() as cache:
+                            await cache.update_process(
+                                process_id=self.process_ids[symbol_key],
+                                status=ProcessStatus.RUNNING,
+                                message=f"Received trade at {trade_obj.time}",
+                            )
+                        self.last_process_update[symbol_key] = current_time
 
             except Exception as e:
                 logger.error("Error processing trade", exchange=exchange_name, error=str(e))
