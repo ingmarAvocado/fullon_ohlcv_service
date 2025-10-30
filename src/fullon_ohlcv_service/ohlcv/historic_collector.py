@@ -261,10 +261,30 @@ class HistoricOHLCVCollector:
                 status=ProcessStatus.STARTING,
             )
 
-        # Calculate time range
-        start_timestamp = int(
-            (datetime.now(UTC) - timedelta(days=symbol.backtest)).timestamp() * 1000
-        )
+        # Calculate time range - check for existing data first
+        async with CandleRepository(exchange_name, symbol_str) as repo:
+            latest_timestamp = await repo.get_latest_timestamp()
+
+            if latest_timestamp:
+                # Resume from last collected data (add 1 second to avoid duplicate)
+                start_timestamp = int((latest_timestamp.timestamp() + 1) * 1000)
+                logger.info(
+                    "Resuming collection from existing data",
+                    symbol=f"{exchange_name}:{symbol_str}",
+                    resume_from=latest_timestamp.format('YYYY-MM-DD HH:mm:ss')
+                )
+            else:
+                # No data exists, start from backtest period
+                start_timestamp = int(
+                    (datetime.now(UTC) - timedelta(days=symbol.backtest)).timestamp() * 1000
+                )
+                logger.info(
+                    "Starting fresh collection from backtest period",
+                    symbol=f"{exchange_name}:{symbol_str}",
+                    backtest_days=symbol.backtest,
+                    start_from=datetime.fromtimestamp(start_timestamp/1000, tz=UTC).strftime('%Y-%m-%d %H:%M:%S')
+                )
+
         current_timestamp = int(datetime.now(UTC).timestamp() * 1000)
 
         total_candles = 0
