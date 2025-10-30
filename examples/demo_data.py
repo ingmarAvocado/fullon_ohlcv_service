@@ -503,7 +503,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: int | None):
             {
                 "symbol": "BTC/USD:BTC",
                 "updateframe": "1h",
-                "backtest": 3,
+                "backtest": 365,  # Request 1 year of data to test BitMEX's historical depth
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USD",
@@ -514,7 +514,7 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: int | None):
             {
                 "symbol": "BTC/USDC:USDC",
                 "updateframe": "1h",
-                "backtest": 3,
+                "backtest": 500,
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USDC",

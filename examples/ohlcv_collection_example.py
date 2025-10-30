@@ -71,23 +71,23 @@ async def set_database():
 
     # Load specific symbol for OHLCV testing
     async with DatabaseContext() as db:
-        # Get hyperliquid category exchange
+        # Get bitmex category exchange
         cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
-        hyperliquid_cat_ex = None
+        bitmex_cat_ex = None
         for cat_ex in cat_exchanges:
-            if cat_ex.name == "hyperliquid":
-                hyperliquid_cat_ex = cat_ex
+            if cat_ex.name == "bitmex":
+                bitmex_cat_ex = cat_ex
                 break
 
-        if not hyperliquid_cat_ex:
-            raise ValueError("Hyperliquid exchange not found")
+        if not bitmex_cat_ex:
+            raise ValueError("BitMEX exchange not found")
 
-        # Get BTC/USDC:USDC symbol for hyperliquid
+        # Get BTC/USD:BTC symbol for bitmex (BitMEX uses BTC settle, not USD)
         symbol = await db.symbols.get_by_symbol(
-            "BTC/USDC:USDC", cat_ex_id=hyperliquid_cat_ex.cat_ex_id
+            "BTC/USD:BTC", cat_ex_id=bitmex_cat_ex.cat_ex_id
         )
         if not symbol:
-            raise ValueError("BTC/USDC:USDC symbol not found on hyperliquid exchange")
+            raise ValueError("BTC/USD:BTC symbol not found on bitmex exchange")
 
     logger.info("Loaded symbol", symbol=symbol.symbol, exchange=symbol.cat_exchange.name)
     return symbol
@@ -202,7 +202,7 @@ async def verify_ohlcv_data(symbol):
 async def main():
     """Run OHLCV collection examples."""
     print("🧪 OHLCV SINGLE-SYMBOL COLLECTION EXAMPLE")
-    print("Testing daemon process_symbol() method for BTC/USDC:USDC on hyperliquid")
+    print("Testing daemon process_symbol() method for BTC/USD:BTC on bitmex")
     print("\nPattern:")
     print("  Phase 1: Historical catch-up (REST with pagination)")
     print("  Phase 2: Real-time streaming (WebSocket)")

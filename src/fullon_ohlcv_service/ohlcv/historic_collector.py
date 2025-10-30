@@ -320,6 +320,59 @@ class HistoricOHLCVCollector:
                         )
                         break
 
+                    # Validate candle spacing AND check if exchange honored the 'since' parameter
+                    if batch_candles:
+                        first_ts = self._extract_timestamp(batch_candles[0])
+                        first_ts_sec = first_ts / 1000 if first_ts > 1e12 else first_ts
+                        requested_ts_sec = since_timestamp / 1000
+
+                        # Check if exchange ignored our 'since' parameter (returned data much later than requested)
+                        # Allow 1 hour tolerance for clock drift/rounding
+                        time_gap_sec = first_ts_sec - requested_ts_sec
+                        if time_gap_sec > 3600:  # More than 1 hour gap
+                            days_gap = time_gap_sec / 86400
+                            # Calculate available history: from first candle to now
+                            current_time_sec = datetime.now(UTC).timestamp()
+                            available_history_sec = current_time_sec - first_ts_sec
+                            available_history_days = available_history_sec / 86400
+
+                            logger.warning(
+                                f"⚠️  {exchange_name} has limited historical OHLCV data availability. "
+                                f"Requested data from {datetime.fromtimestamp(requested_ts_sec, tz=UTC).strftime('%Y-%m-%d %H:%M:%S')}, "
+                                f"but exchange only returned data from {datetime.fromtimestamp(first_ts_sec, tz=UTC).strftime('%Y-%m-%d %H:%M:%S')} "
+                                f"({days_gap:.1f} days later). "
+                                f"This exchange appears to only maintain ~{available_history_days:.0f} days of 1-minute data.",
+                                symbol=f"{exchange_name}:{symbol_str}",
+                                requested_date=datetime.fromtimestamp(requested_ts_sec, tz=UTC).strftime('%Y-%m-%d'),
+                                actual_date=datetime.fromtimestamp(first_ts_sec, tz=UTC).strftime('%Y-%m-%d'),
+                                gap_days=days_gap,
+                                available_days=available_history_days
+                            )
+                            # Update since_timestamp to continue from where data is actually available
+                            since_timestamp = int(first_ts_sec * 1000)
+
+                        # Also validate candle spacing for 1-minute timeframe (sparse data detection)
+                        if len(batch_candles) >= 2:
+                            last_ts = self._extract_timestamp(batch_candles[-1])
+                            last_ts_sec = last_ts / 1000 if last_ts > 1e12 else last_ts
+
+                            time_span_sec = last_ts_sec - first_ts_sec
+                            expected_span_sec = (len(batch_candles) - 1) * 60  # 1-minute candles
+
+                            # Allow 10% tolerance for minor timing issues
+                            if time_span_sec > expected_span_sec * 1.1:
+                                logger.error(
+                                    f"❌ Exchange returned sparse/downsampled data - candles are NOT 1-minute intervals! "
+                                    f"Got {len(batch_candles)} candles spanning {time_span_sec/3600:.1f} hours "
+                                    f"(expected {expected_span_sec/3600:.1f} hours for 1-minute data). "
+                                    f"This is a critical data quality issue - stopping collection.",
+                                    symbol=f"{exchange_name}:{symbol_str}",
+                                    span_hours=time_span_sec/3600,
+                                    expected_hours=expected_span_sec/3600,
+                                    ratio=time_span_sec/expected_span_sec
+                                )
+                                break  # Stop collection - data quality issue
+
                     # Convert and save batch
                     candles = self._convert_to_candle_objects(batch_candles)
                     if candles:
@@ -341,8 +394,12 @@ class HistoricOHLCVCollector:
                         current_time_sec = current_timestamp / 1000
                         time_remaining_sec = current_time_sec - last_timestamp_sec
 
-                        # Log progress with time range
-                        from_time = datetime.fromtimestamp(since_timestamp / 1000, tz=UTC).strftime(
+                        # Log progress with ACTUAL time range from candles (not requested time)
+                        first_candle = batch_candles[0]
+                        first_candle_ts = self._extract_timestamp(first_candle)
+                        first_candle_ts_sec = first_candle_ts / 1000 if first_candle_ts > 1e12 else first_candle_ts
+
+                        from_time = datetime.fromtimestamp(first_candle_ts_sec, tz=UTC).strftime(
                             "%Y-%m-%d %H:%M:%S"
                         )
                         to_time = datetime.fromtimestamp(last_timestamp_sec, tz=UTC).strftime(
