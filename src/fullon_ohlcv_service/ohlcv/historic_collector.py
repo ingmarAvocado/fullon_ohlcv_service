@@ -19,6 +19,8 @@ from fullon_ohlcv.repositories.ohlcv import CandleRepository
 from fullon_orm import DatabaseContext
 from fullon_orm.models import Exchange, Symbol
 
+from .utils import timeframe_to_seconds, convert_to_candle_objects
+
 logger = get_component_logger("fullon.ohlcv.historic")
 
 
@@ -289,6 +291,7 @@ class HistoricOHLCVCollector:
 
         total_candles = 0
         since_timestamp = start_timestamp
+        last_since_timestamp = None  # Track to detect infinite loop
 
         logger.debug(
             "Starting collection for symbol",
@@ -308,9 +311,9 @@ class HistoricOHLCVCollector:
 
             while since_timestamp < current_timestamp:
                 try:
-                    # Get batch of candles (try milliseconds for Hyperliquid)
+                    # Get batch of candles using symbol's configured timeframe
                     batch_candles = await handler.get_ohlcv(
-                        symbol_str, timeframe="1m", since=since_timestamp, limit=1000
+                        symbol_str, timeframe=symbol.updateframe, since=since_timestamp, limit=1000
                     )
 
                     # Filter out None values that may be returned by the API
@@ -340,6 +343,15 @@ class HistoricOHLCVCollector:
                         )
                         break
 
+                    # Check if we received less than requested - indicates end of available data
+                    if len(batch_candles) < 1000:  # Requested limit was 1000
+                        logger.debug(
+                            f"Received partial batch ({len(batch_candles)} < 1000 candles) - reached end of available data",
+                            symbol=f"{exchange_name}:{symbol_str}"
+                        )
+                        # Process this final batch, then exit loop after saving
+                        # (Don't break here - we want to save the final batch)
+
                     # Validate candle spacing AND check if exchange honored the 'since' parameter
                     if batch_candles:
                         first_ts = self._extract_timestamp(batch_candles[0])
@@ -361,8 +373,9 @@ class HistoricOHLCVCollector:
                                 f"Requested data from {datetime.fromtimestamp(requested_ts_sec, tz=UTC).strftime('%Y-%m-%d %H:%M:%S')}, "
                                 f"but exchange only returned data from {datetime.fromtimestamp(first_ts_sec, tz=UTC).strftime('%Y-%m-%d %H:%M:%S')} "
                                 f"({days_gap:.1f} days later). "
-                                f"This exchange appears to only maintain ~{available_history_days:.0f} days of 1-minute data.",
+                                f"This exchange appears to only maintain ~{available_history_days:.0f} days of {symbol.updateframe} data.",
                                 symbol=f"{exchange_name}:{symbol_str}",
+                                timeframe=symbol.updateframe,
                                 requested_date=datetime.fromtimestamp(requested_ts_sec, tz=UTC).strftime('%Y-%m-%d'),
                                 actual_date=datetime.fromtimestamp(first_ts_sec, tz=UTC).strftime('%Y-%m-%d'),
                                 gap_days=days_gap,
@@ -371,37 +384,68 @@ class HistoricOHLCVCollector:
                             # Update since_timestamp to continue from where data is actually available
                             since_timestamp = int(first_ts_sec * 1000)
 
-                        # Also validate candle spacing for 1-minute timeframe (sparse data detection)
-                        if len(batch_candles) >= 2:
+                        # Validate candle spacing for configured timeframe (sparse data detection)
+                        # Note: For daily (1d) and longer timeframes, weekends/holidays create natural gaps
+                        # so we only validate minute/hour timeframes where continuous data is expected
+                        if len(batch_candles) >= 2 and symbol.updateframe in ["1m", "5m", "15m", "30m", "1h", "4h"]:
                             last_ts = self._extract_timestamp(batch_candles[-1])
                             last_ts_sec = last_ts / 1000 if last_ts > 1e12 else last_ts
 
                             time_span_sec = last_ts_sec - first_ts_sec
-                            expected_span_sec = (len(batch_candles) - 1) * 60  # 1-minute candles
+                            timeframe_sec = timeframe_to_seconds(symbol.updateframe)
+                            expected_span_sec = (len(batch_candles) - 1) * timeframe_sec
 
-                            # Allow 10% tolerance for minor timing issues
-                            if time_span_sec > expected_span_sec * 1.1:
-                                logger.error(
-                                    f"❌ Exchange returned sparse/downsampled data - candles are NOT 1-minute intervals! "
+                            # Check if data is TOO SPARSE (downsampled) - allow 50% tolerance for gaps
+                            # If actual span is more than 1.5x expected, data might be downsampled
+                            if time_span_sec > expected_span_sec * 1.5:
+                                logger.warning(
+                                    f"⚠️  Exchange returned sparse data - candles may have gaps. "
                                     f"Got {len(batch_candles)} candles spanning {time_span_sec/3600:.1f} hours "
-                                    f"(expected {expected_span_sec/3600:.1f} hours for 1-minute data). "
-                                    f"This is a critical data quality issue - stopping collection.",
+                                    f"(expected ~{expected_span_sec/3600:.1f} hours for continuous {symbol.updateframe} data). "
+                                    f"Continuing collection but data may have missing periods.",
                                     symbol=f"{exchange_name}:{symbol_str}",
+                                    timeframe=symbol.updateframe,
                                     span_hours=time_span_sec/3600,
                                     expected_hours=expected_span_sec/3600,
                                     ratio=time_span_sec/expected_span_sec
                                 )
-                                break  # Stop collection - data quality issue
+                                # Don't break - continue collection for sparse data
 
                     # Convert and save batch
-                    candles = self._convert_to_candle_objects(batch_candles)
+                    candles = convert_to_candle_objects(batch_candles)
+                    saved_successfully = False
+
                     if candles:
                         async with CandleRepository(exchange_name, symbol_str) as repo:
                             success = await repo.save_candles(candles)
                             if success:
                                 total_candles += len(candles)
+                                saved_successfully = True
 
-                    # Advance timestamp
+                    # Check for partial batch (indicates end of available data)
+                    partial_batch = len(batch_candles) < 1000
+
+                    # If partial batch detected, break immediately regardless of save success
+                    # This prevents infinite loops when single candles fail to save
+                    if partial_batch:
+                        if saved_successfully:
+                            logger.info(
+                                f"Processed final partial batch successfully - collection complete",
+                                symbol=f"{exchange_name}:{symbol_str}",
+                                total_candles=total_candles,
+                                batch_size=len(batch_candles)
+                            )
+                        else:
+                            logger.warning(
+                                f"Partial batch ({len(batch_candles)} candles) failed to save - "
+                                f"reached end of available data. This may occur when the exchange returns "
+                                f"insufficient data for timeframe detection (minimum 2 candles required).",
+                                symbol=f"{exchange_name}:{symbol_str}",
+                                total_candles=total_candles
+                            )
+                        break
+
+                    # Advance timestamp only if we haven't reached end of data
                     if batch_candles:
                         last_candle = batch_candles[-1]
                         last_timestamp = self._extract_timestamp(last_candle)
@@ -432,7 +476,23 @@ class HistoricOHLCVCollector:
                             f"{_format_time_remaining(time_remaining_sec)} left"
                         )
 
-                        since_timestamp = int((last_timestamp_sec + 1) * 1000)
+                        # Advance by timeframe interval instead of 1 second
+                        # For daily data, this means advancing by 1 day (86400s) instead of 1s
+                        timeframe_seconds = timeframe_to_seconds(symbol.updateframe)
+                        new_since_timestamp = int((last_timestamp_sec + timeframe_seconds) * 1000)
+
+                        # Check if timestamp hasn't advanced (stuck in loop)
+                        if last_since_timestamp is not None and new_since_timestamp <= last_since_timestamp:
+                            logger.warning(
+                                f"No progress in timestamp advancement - stopping collection",
+                                symbol=f"{exchange_name}:{symbol_str}",
+                                last_timestamp=last_since_timestamp,
+                                new_timestamp=new_since_timestamp
+                            )
+                            break
+
+                        last_since_timestamp = since_timestamp
+                        since_timestamp = new_since_timestamp
 
                     # Rate limiting
                     await asyncio.sleep(0.1)
@@ -476,60 +536,3 @@ class HistoricOHLCVCollector:
         if isinstance(candle, dict):
             return candle.get("timestamp", candle.get("datetime", 0))
         return getattr(candle, "timestamp", getattr(candle, "datetime", 0))
-
-    def _convert_to_candle_objects(self, raw_candles: list) -> list[Candle]:
-        """Convert raw candles to Candle objects."""
-        candle_objects = []
-
-        for raw_candle in raw_candles:
-            try:
-                # Handle list format [timestamp, open, high, low, close, volume]
-                if isinstance(raw_candle, list) and len(raw_candle) >= 6:
-                    timestamp = raw_candle[0]
-                    open_price = raw_candle[1]
-                    high = raw_candle[2]
-                    low = raw_candle[3]
-                    close = raw_candle[4]
-                    volume = raw_candle[5]
-                # Handle dict format
-                elif isinstance(raw_candle, dict):
-                    timestamp = raw_candle.get("timestamp", raw_candle.get("datetime", 0))
-                    open_price = raw_candle.get("open", 0.0)
-                    high = raw_candle.get("high", 0.0)
-                    low = raw_candle.get("low", 0.0)
-                    close = raw_candle.get("close", 0.0)
-                    volume = raw_candle.get("volume", 0.0)
-                # Handle object format
-                else:
-                    timestamp = getattr(raw_candle, "timestamp", getattr(raw_candle, "datetime", 0))
-                    open_price = getattr(raw_candle, "open", 0.0)
-                    high = getattr(raw_candle, "high", 0.0)
-                    low = getattr(raw_candle, "low", 0.0)
-                    close = getattr(raw_candle, "close", 0.0)
-                    volume = getattr(raw_candle, "volume", 0.0)
-
-                # Skip candles with None values
-                if any(x is None for x in [timestamp, open_price, high, low, close, volume]):
-                    logger.warning("Skipping candle with None values", raw_candle=raw_candle)
-                    continue
-
-                # Convert timestamp to datetime
-                timestamp_dt = datetime.fromtimestamp(
-                    timestamp / 1000 if timestamp > 1e12 else timestamp, tz=UTC
-                )
-
-                candle_objects.append(
-                    Candle(
-                        timestamp=timestamp_dt,
-                        open=float(open_price),
-                        high=float(high),
-                        low=float(low),
-                        close=float(close),
-                        vol=float(volume),
-                    )
-                )
-            except Exception as e:
-                logger.warning("Failed to convert candle", error=str(e))
-                continue
-
-        return candle_objects

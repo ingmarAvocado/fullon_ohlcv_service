@@ -5,6 +5,7 @@ Handles real-time OHLCV data collection using bulk initialization.
 Implements clean fullon ecosystem integration patterns.
 """
 
+import asyncio
 import arrow
 from fullon_cache import ProcessCache
 from fullon_cache.process_cache import ProcessStatus, ProcessType
@@ -16,6 +17,7 @@ from fullon_orm import DatabaseContext
 from fullon_orm.models import Exchange, Symbol
 
 from ..utils.admin_helper import get_admin_exchanges
+from .utils import timeframe_to_seconds, convert_to_candle_objects
 
 logger = get_component_logger("fullon.ohlcv.live")
 
@@ -35,6 +37,7 @@ class LiveOHLCVCollector:
         self.registered_symbols = set()
         self.last_candle_timestamps = {}  # Track last saved candle timestamp per symbol
         self.process_ids = {}  # Track process IDs per symbol
+        self.rest_polling_tasks = {}  # Track REST polling tasks per symbol
 
     async def start_collection(self) -> None:
         """Start live OHLCV collection for all configured symbols."""
@@ -191,6 +194,141 @@ class LiveOHLCVCollector:
                 "Error starting WebSocket for exchange", exchange=exchange_name, error=str(e)
             )
             raise
+
+    def _supports_websocket(self, handler) -> bool:
+        """Check if exchange handler supports WebSocket OHLCV.
+
+        Args:
+            handler: WebSocket handler from ExchangeQueue
+
+        Returns:
+            True if WebSocket is supported, False otherwise
+        """
+        try:
+            # Check if subscribe_ohlcv method exists
+            if not hasattr(handler, 'subscribe_ohlcv'):
+                logger.debug("Handler missing subscribe_ohlcv method")
+                return False
+
+            # Check if handler has WebSocket capabilities
+            if hasattr(handler, 'has'):
+                has_ws = handler.has.get('ws', False)
+                has_watch_ohlcv = handler.has.get('watchOHLCV', False)
+                if not (has_ws and has_watch_ohlcv):
+                    logger.debug(
+                        "Handler lacks WebSocket capabilities",
+                        has_ws=has_ws,
+                        has_watch_ohlcv=has_watch_ohlcv
+                    )
+                    return False
+
+            # Check if handler is connected (Yahoo stub fails at connection)
+            if hasattr(handler, 'is_connected'):
+                if not handler.is_connected():
+                    logger.debug("Handler WebSocket not connected")
+                    return False
+
+            return True
+        except Exception as e:
+            logger.warning(f"Error checking WebSocket support: {e}")
+            return False
+
+    async def _start_rest_polling(
+        self, exchange_obj: Exchange, symbol: Symbol, handler
+    ) -> None:
+        """Start REST polling for a symbol that doesn't support WebSocket.
+
+        Args:
+            exchange_obj: Exchange object
+            symbol: Symbol to poll
+            handler: REST handler from ExchangeQueue
+        """
+        exchange_name = exchange_obj.cat_exchange.name
+        symbol_str = symbol.symbol
+        symbol_key = f"{exchange_name}:{symbol_str}"
+
+        # Get timeframe (default to 1m)
+        timeframe = getattr(symbol, 'updateframe', '1m')
+        poll_interval = timeframe_to_seconds(timeframe)
+
+        logger.info(
+            "Starting REST polling fallback",
+            exchange=exchange_name,
+            symbol=symbol_str,
+            timeframe=timeframe,
+            poll_interval=poll_interval
+        )
+
+        async def poll_loop():
+            """Continuous polling loop for REST OHLCV data."""
+            while self.running:
+                try:
+                    # Fetch last 2 candles (use second-to-last as it's guaranteed complete)
+                    candles = await handler.get_ohlcv(
+                        symbol_str,
+                        timeframe=timeframe,
+                        limit=2
+                    )
+
+                    if candles and len(candles) >= 2:
+                        # Use second-to-last candle (guaranteed complete)
+                        candle_data = candles[-2]
+
+                        # Convert to Candle object
+                        candle_list = convert_to_candle_objects([candle_data])
+
+                        if candle_list:
+                            candle = candle_list[0]
+
+                            # Only save if this is a NEW candle (different timestamp)
+                            if candle.timestamp != self.last_candle_timestamps.get(symbol_key):
+                                async with CandleRepository(exchange_name, symbol_str, test=False) as repo:
+                                    await repo.save_candles([candle])
+
+                                self.last_candle_timestamps[symbol_key] = candle.timestamp
+
+                                logger.debug(
+                                    "Saved new candle via REST polling",
+                                    exchange=exchange_name,
+                                    symbol=symbol_str,
+                                    timestamp=candle.timestamp
+                                )
+
+                                # Update process status
+                                if symbol_key in self.process_ids:
+                                    async with ProcessCache() as cache:
+                                        await cache.update_process(
+                                            process_id=self.process_ids[symbol_key],
+                                            status=ProcessStatus.RUNNING,
+                                            message=f"REST polling - received OHLCV at {candle.timestamp}"
+                                        )
+
+                    # Wait for next poll interval
+                    await asyncio.sleep(poll_interval)
+
+                except Exception as e:
+                    logger.error(
+                        "Error in REST polling loop",
+                        exchange=exchange_name,
+                        symbol=symbol_str,
+                        error=str(e)
+                    )
+
+                    # Update process status on error
+                    if symbol_key in self.process_ids:
+                        async with ProcessCache() as cache:
+                            await cache.update_process(
+                                process_id=self.process_ids[symbol_key],
+                                status=ProcessStatus.ERROR,
+                                message=f"REST polling error: {str(e)}"
+                            )
+
+                    # Wait before retrying
+                    await asyncio.sleep(poll_interval)
+
+        # Start the polling task
+        task = asyncio.create_task(poll_loop())
+        self.rest_polling_tasks[symbol_key] = task
 
     def _create_symbol_callback(self, exchange_name: str, symbol_str: str):
         """Create per-symbol callback with symbol context."""
@@ -359,7 +497,7 @@ class LiveOHLCVCollector:
     async def start_symbol(self, symbol: Symbol) -> None:
         """Start live collection for a specific symbol.
 
-        Simple method that gets admin exchange and calls _start_exchange_collector.
+        Detects if WebSocket is available. If not, falls back to REST polling.
 
         Args:
             symbol: Symbol to start collecting
@@ -367,18 +505,92 @@ class LiveOHLCVCollector:
         Raises:
             ValueError: If admin exchange not found
         """
+        exchange_name = symbol.cat_exchange.name
+        symbol_str = symbol.symbol
+        symbol_key = f"{exchange_name}:{symbol_str}"
+
         # Get admin exchanges
         _, admin_exchanges = await get_admin_exchanges()
 
         # Find admin exchange for this symbol
         admin_exchange = None
         for exchange in admin_exchanges:
-            if exchange.cat_exchange.name == symbol.cat_exchange.name:
+            if exchange.cat_exchange.name == exchange_name:
                 admin_exchange = exchange
                 break
 
         if not admin_exchange:
-            raise ValueError(f"Admin exchange {symbol.cat_exchange.name} not found")
+            raise ValueError(f"Admin exchange {exchange_name} not found")
 
-        # Let _start_exchange_collector handle everything
-        await self._start_exchange_collector(admin_exchange, [symbol])
+        # Register process for this symbol
+        async with ProcessCache() as cache:
+            process_id = await cache.register_process(
+                process_type=ProcessType.OHLCV,
+                component=symbol_key,
+                params={
+                    "exchange": exchange_name,
+                    "symbol": symbol_str,
+                    "type": "live",
+                },
+                message="Starting live OHLCV collection",
+                status=ProcessStatus.STARTING,
+            )
+        self.process_ids[symbol_key] = process_id
+
+        try:
+            # Try to get WebSocket handler
+            ws_handler = await ExchangeQueue.get_websocket_handler(admin_exchange)
+
+            # Check if exchange needs trades for OHLCV
+            if hasattr(ws_handler, 'needs_trades_for_ohlcv'):
+                if ws_handler.needs_trades_for_ohlcv():
+                    logger.info(
+                        "Exchange needs trades for OHLCV, skipping",
+                        exchange=exchange_name,
+                        symbol=symbol_str
+                    )
+                    return
+
+            # Check if WebSocket is supported
+            if self._supports_websocket(ws_handler):
+                logger.info(
+                    "WebSocket available - using WebSocket for live OHLCV",
+                    exchange=exchange_name,
+                    symbol=symbol_str
+                )
+                # Use WebSocket
+                await self._start_exchange_collector(admin_exchange, [symbol])
+            else:
+                # Fallback to REST polling
+                logger.info(
+                    "WebSocket unavailable - falling back to REST polling",
+                    exchange=exchange_name,
+                    symbol=symbol_str
+                )
+
+                # Get REST handler
+                rest_handler = await ExchangeQueue.get_rest_handler(admin_exchange)
+
+                # Start REST polling
+                await self._start_rest_polling(admin_exchange, symbol, rest_handler)
+
+                # Register symbol as collecting
+                self.registered_symbols.add(symbol_key)
+
+        except Exception as e:
+            logger.error(
+                "Error starting symbol collection",
+                exchange=exchange_name,
+                symbol=symbol_str,
+                error=str(e)
+            )
+
+            # Update process status on error
+            if symbol_key in self.process_ids:
+                async with ProcessCache() as cache:
+                    await cache.update_process(
+                        process_id=self.process_ids[symbol_key],
+                        status=ProcessStatus.ERROR,
+                        message=f"Error: {str(e)}"
+                    )
+            raise

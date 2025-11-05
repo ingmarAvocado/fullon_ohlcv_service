@@ -395,7 +395,7 @@ async def install_exchanges_internal(db: DatabaseContext, uid: int) -> tuple[int
     # Cache operations should not be performed within active database transactions
 
     # Define the exchanges to create (matching fullon_orm demo exactly)
-    exchanges_to_create = ["kraken", "bitmex", "hyperliquid"]
+    exchanges_to_create = ["kraken", "bitmex", "hyperliquid", "yahoo"]
 
     # Use repository method to get existing cat_exchanges
     cat_exchanges = await db.exchanges.get_cat_exchanges(all=True)
@@ -518,6 +518,26 @@ async def install_symbols_internal(db: DatabaseContext, cat_ex_id: int | None):
                 "decimals": 6,
                 "base": "BTC",
                 "quote": "USDC",
+                "futures": True,
+            }
+        ],
+        "yahoo": [
+            {
+                "symbol": "SPX",
+                "updateframe": "1d",
+                "backtest": 365,  # Request 1 year of daily data for S&P 500 index
+                "decimals": 2,
+                "base": "SPX",
+                "quote": "USD",
+                "futures": False,
+            },
+            {
+                "symbol": "GOLD",
+                "updateframe": "1m",
+                "backtest": 2,  # Request 2 days (Yahoo has ~8 days of 1m data for futures)
+                "decimals": 2,
+                "base": "GOLD",
+                "quote": "USD",
                 "futures": True,
             }
         ]
