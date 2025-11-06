@@ -188,11 +188,11 @@ class TestDaemonPipelineIntegration:
     @pytest.mark.asyncio
     async def test_daemon_symbol_initialization_failure_handling(self, dual_test_databases):
         """Test daemon handles symbol initialization failures gracefully."""
-        # Mock symbols
-        mock_symbols = [AsyncMock(symbol="BTC/USD", cat_exchange=AsyncMock(name="kraken"))]
+        # Mock database to provide test symbols - no need for install_demo_data()
+        # This test verifies daemon continues even when add_all_symbols fails
 
         with (
-            patch("fullon_orm.DatabaseContext") as mock_db_class,
+            patch("fullon_ohlcv_service.daemon.DatabaseContext") as mock_db_class,
             patch(
                 "fullon_ohlcv_service.daemon.add_all_symbols", new=AsyncMock(return_value=False)
             ) as mock_add_symbols,
@@ -213,8 +213,15 @@ class TestDaemonPipelineIntegration:
                 new=AsyncMock(),
             ),
         ):
+            # Mock database to return test symbols
             mock_db = AsyncMock()
             mock_db_class.return_value.__aenter__.return_value = mock_db
+
+            # Create mock symbols data
+            mock_symbols = [
+                {"symbol": "BTC/USDT", "cat_ex_id": 1, "active": True},
+                {"symbol": "ETH/USDT", "cat_ex_id": 1, "active": True}
+            ]
             mock_db.symbols.get_all.return_value = mock_symbols
 
             daemon = OhlcvServiceDaemon()
@@ -236,4 +243,4 @@ class TestDaemonPipelineIntegration:
             args, kwargs = mock_add_symbols.call_args
             assert "symbols" in kwargs
             symbols = kwargs["symbols"]
-            assert len(symbols) > 0  # Should have symbols from demo data
+            assert len(symbols) > 0  # Should have symbols from mocked data

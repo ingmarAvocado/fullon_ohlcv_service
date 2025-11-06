@@ -11,6 +11,7 @@ from fullon_ohlcv_service.ohlcv.historic_collector import (
     HistoricOHLCVCollector,
     _format_time_remaining,
 )
+from fullon_ohlcv_service.ohlcv.utils import convert_to_candle_objects
 from fullon_orm.models import Symbol, Exchange, CatExchange
 from fullon_cache.process_cache import ProcessStatus, ProcessType
 
@@ -391,12 +392,11 @@ class TestHistoricOHLCVCollectorCore:
 
     def test_convert_to_candle_objects_list_format(self):
         """Test conversion from list format candles."""
-        collector = HistoricOHLCVCollector()
         raw_candles = [
             [1640995200000, 50000, 51000, 49000, 50500, 100],
             [1640995260000, 50500, 51500, 49500, 51000, 150],
         ]
-        candles = collector._convert_to_candle_objects(raw_candles)
+        candles = convert_to_candle_objects(raw_candles)
 
         assert len(candles) == 2
         assert candles[0].open == 50000.0
@@ -407,7 +407,6 @@ class TestHistoricOHLCVCollectorCore:
 
     def test_convert_to_candle_objects_dict_format(self):
         """Test conversion from dict format candles."""
-        collector = HistoricOHLCVCollector()
         raw_candles = [
             {
                 "timestamp": 1640995200000,
@@ -418,7 +417,7 @@ class TestHistoricOHLCVCollectorCore:
                 "volume": 100,
             }
         ]
-        candles = collector._convert_to_candle_objects(raw_candles)
+        candles = convert_to_candle_objects(raw_candles)
 
         assert len(candles) == 1
         assert candles[0].open == 50000.0
@@ -429,22 +428,20 @@ class TestHistoricOHLCVCollectorCore:
 
     def test_convert_to_candle_objects_with_none_values(self):
         """Test conversion skips candles with None values."""
-        collector = HistoricOHLCVCollector()
         raw_candles = [
             [1640995200000, 50000, 51000, 49000, 50500, 100],
             [1640995260000, None, 51500, 49500, 51000, 150],  # None open
         ]
-        candles = collector._convert_to_candle_objects(raw_candles)
+        candles = convert_to_candle_objects(raw_candles)
 
         assert len(candles) == 1  # Second candle should be skipped
 
     def test_convert_to_candle_objects_milliseconds_timestamp(self):
         """Test conversion handles millisecond timestamps."""
-        collector = HistoricOHLCVCollector()
         raw_candles = [
             [1640995200000, 50000, 51000, 49000, 50500, 100]  # milliseconds
         ]
-        candles = collector._convert_to_candle_objects(raw_candles)
+        candles = convert_to_candle_objects(raw_candles)
 
         assert len(candles) == 1
         # Should convert milliseconds to seconds for datetime
