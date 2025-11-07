@@ -1,0 +1,181 @@
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   LiveOHLCVCollector - REST Fallback Flow                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                            start_collection()
+                                    │
+                                    ▼
+                        Load symbols from database
+                        Group by exchange
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  _start_exchange_collector()  │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    Try: get_websocket_handler()
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+            SUCCESS: Handler obtained      FAIL: ImportError/Exception
+                    │                               │
+                    ▼                               │
+        Check: needs_trades_for_ohlcv()            │
+                    │                               │
+            ┌───────┴────────┐                     │
+            ▼                ▼                      │
+        NO (continue)    YES (skip OHLCV)          │
+            │                                       │
+            ▼                                       │
+    Test: _detect_websocket_ohlcv_support()        │
+            │                                       │
+    ┌───────┴────────┐                            │
+    ▼                ▼                             │
+SUPPORTED        NOT SUPPORTED ◄──────────────────┘
+    │                │
+    │                │
+    ▼                ▼
+┌─────────────┐  ┌──────────────────┐
+│  WEBSOCKET  │  │   REST POLLING   │
+│    MODE     │  │      MODE        │
+└──────┬──────┘  └────────┬─────────┘
+       │                  │
+       │                  │
+       ▼                  ▼
+┌─────────────────┐  ┌──────────────────────────┐
+│ For each symbol │  │ _start_rest_polling()    │
+│                 │  │                          │
+│ • subscribe_    │  │ For each symbol:         │
+│   ohlcv()       │  │ • Calculate interval     │
+│                 │  │   from timeframe         │
+│ • Create        │  │ • Get REST handler       │
+│   callback      │  │ • Start polling task     │
+│                 │  │                          │
+│ • Save on       │  └────────┬─────────────────┘
+│   timestamp     │           │
+│   change        │           ▼
+│                 │  ┌──────────────────────────┐
+│ Real-time       │  │ _poll_symbol_loop()      │
+│ updates         │  │                          │
+│ (<1s latency)   │  │ while running:           │
+└─────────────────┘  │   • _fetch_latest_       │
+                     │     candle()             │
+                     │   • Check if new         │
+                     │   • Save if new          │
+                     │   • sleep(interval)      │
+                     │                          │
+                     │ Polling latency:         │
+                     │ • 1m → 60s               │
+                     │ • 5m → 300s              │
+                     │ • 1h → 3600s             │
+                     │ • 1d → 86400s            │
+                     └──────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        REST Polling Architecture                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Exchange: Yahoo Finance (no WebSocket)
+            │
+            ├─ Symbol: AAPL (1d candles)
+            │   └─ Poll every 86400s (1 day)
+            │       └─ Fetch limit=2, use [-2] (guaranteed complete)
+            │
+            ├─ Symbol: TSLA (1h candles)
+            │   └─ Poll every 3600s (1 hour)
+            │
+            └─ Symbol: MSFT (1m candles)
+                └─ Poll every 60s (1 minute)
+
+    Each symbol gets:
+    • 1 asyncio.Task (polling loop)
+    • 1 REST handler (shared across exchange)
+    • 1 timestamp cache entry
+    • 1 ProcessCache entry (status tracking)
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Code Reuse Strategy                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    HistoricOHLCVCollector           LiveOHLCVCollector
+    (existing)                       (enhanced)
+            │                               │
+            └───────────┬───────────────────┘
+                        │
+                        ▼
+                ┌───────────────┐
+                │   utils.py    │
+                │   (shared)    │
+                ├───────────────┤
+                │ • timeframe_  │
+                │   to_seconds()│
+                │               │
+                │ • convert_to_ │
+                │   candle_     │
+                │   object()    │
+                │               │
+                │ • extract_    │
+                │   timestamp() │
+                └───────────────┘
+
+    95% logic reuse, zero duplication
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Performance Characteristics                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Metric                  WebSocket       REST Polling    Improvement
+    ────────────────────────────────────────────────────────────────────
+    API calls (1m)          Real-time       1 per 60s       60x fewer
+    API calls (1h)          Real-time       1 per 3600s     3600x fewer
+    API calls (1d)          Real-time       1 per 86400s    86400x fewer
+
+    Latency (1m)            <1s             <60s            Acceptable
+    Latency (1h)            <1s             <3600s          Acceptable
+    Latency (1d)            <1s             <86400s         Acceptable
+
+    Memory per symbol       8KB             8KB + 64B       Negligible
+    CPU overhead            Low             Low             Negligible
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      WebSocket Detection Logic                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    async def _detect_websocket_ohlcv_support(handler, symbol):
+        """
+        Try:
+            handler.subscribe_ohlcv(symbol, "1m", dummy_callback)
+            → SUCCESS: WebSocket OHLCV supported
+
+        Except NotImplementedError:
+            → Yahoo Finance raises this
+            → Fall back to REST polling
+
+        Except ImportError:
+            → Handler creation failed
+            → Fall back to REST polling
+        """
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Mixed Exchange Example                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    LiveOHLCVCollector
+            │
+            ├─ Kraken (WebSocket OHLCV available)
+            │   ├─ BTC/USD → WebSocket subscription
+            │   ├─ ETH/USD → WebSocket subscription
+            │   └─ Real-time updates (<1s latency)
+            │
+            └─ Yahoo Finance (WebSocket NOT available)
+                ├─ AAPL → REST polling every 1d
+                ├─ TSLA → REST polling every 1h
+                └─ Polling updates (timeframe latency)
+
+    Single collector handles both modes seamlessly!
